@@ -11,7 +11,7 @@
         h1 { text-align: center; color: #333; font-size: 1.2rem; margin-bottom: 5px; }
         input[type="file"] { display: block; margin: 15px auto; width: 100%; }
         #canvas-container { position: relative; width: 100%; border: 2px solid #ccc; overflow: hidden; display: none; }
-        canvas { width: 100%; display: block; }
+        canvas { width: 100%; display: block; background: #fff; }
         .mode-select { text-align: center; margin-top: 15px; display: none; }
         .mode-buttons { display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; }
         button.choice { flex: 1; padding: 12px; background: white; color: #007bff; border: 2px solid #007bff; border-radius: 5px; font-size: 0.95rem; font-weight: bold; cursor: pointer; }
@@ -22,13 +22,13 @@
         #jpg-btn { background: #e67e22; }
         #pdf-btn { background: #2ecc71; }
         button:disabled { background: #ccc !important; border-color: #ccc !important; cursor: not_allowed; }
-        #log { font-size: 0.85rem; margin-top: 10px; text-align: center; color: #e74c3c; font-weight: bold; min-height: 1.2rem; }
+        #log { font-size: 0.85rem; margin-top: 10px; text-align: center; color: #e74c3c; font-weight: bold; min-height: 1.2rem; background: #fdf2f2; padding: 5px; border-radius: 3px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>画像一括トリミング & 結合</h1>
-        <p style="font-size:0.8rem; text-align:center; color: #666; margin: 0;">【完全修正版】新画像生成方式</p>
+        <p style="font-size:0.8rem; text-align:center; color: #666; margin: 0;">【起動トラブル修正版】</p>
         
         <input type="file" id="files-input" multiple accept="image/png, image/jpeg">
         
@@ -52,10 +52,16 @@
             </div>
         </div>
         
-        <p id="log"></p>
+        <p id="log">画像を読み込んでください。</p>
     </div>
 
 <script>
+    // 万が一のエラーを画面に表示するデバッグ機能
+    window.onerror = function(msg, url, line) {
+        document.getElementById('log').textContent = "エラー発生: " + msg + " (Line: " + line + ")";
+        return false;
+    };
+
     const filesInput = document.getElementById('files-input');
     const canvasContainer = document.getElementById('canvas-container');
     const cropCanvas = document.getElementById('crop-canvas');
@@ -72,38 +78,55 @@
     let isDrawing = false;
     let startX, startY;
     let cropArea = null; 
-    let selectedMode = null; 
-    let firstImageElement = null; // 1枚目の画像データを保持
+    let selectedMode = 'score'; // デフォルトは楽譜モード
+    let firstImageElement = null;
 
-    // 1. ファイル読み込みとソート
+    // ボタンの有効・無効切り替え関数
+    function toggleDownloadButtons(enable) {
+        jpgBtn.disabled = !enable;
+        pdfBtn.disabled = !enable;
+    }
+
+    // 1. ファイル読み込み
     filesInput.addEventListener('change', (e) => {
-        files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
-        if (files.length === 0) return;
+        try {
+            files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+            if (files.length === 0) return;
 
-        log.textContent = `${files.length} 枚の画像を読み込み中...`;
-        
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            firstImageElement = new Image();
-            firstImageElement.onload = () => {
-                cropCanvas.width = firstImageElement.width;
-                cropCanvas.height = firstImageElement.height;
-                ctx.drawImage(firstImageElement, 0, 0);
-                canvasContainer.style.display = 'block';
-                modeSelect.style.display = 'block';
-                outputSection.style.display = 'block';
-                log.textContent = `画像の上を指でドラッグして、切り抜く範囲を囲んでください。`;
-                
-                // 初期状態は楽譜モードを選択状態にしておく
-                scoreBtn.click();
-                toggleDownloadButtons(false);
+            log.style.color = "#666";
+            log.textContent = `${files.length} 枚の画像を処理キューに登録しました。1枚目を解析中...`;
+            
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                firstImageElement = new Image();
+                firstImageElement.onload = () => {
+                    // キャンバスのサイズを設定して表示
+                    cropCanvas.width = firstImageElement.width;
+                    cropCanvas.height = firstImageElement.height;
+                    ctx.drawImage(firstImageElement, 0, 0);
+                    
+                    canvasContainer.style.display = 'block';
+                    modeSelect.style.display = 'block';
+                    outputSection.style.display = 'block';
+                    
+                    log.textContent = `読み込み成功！画像の上を指でドラッグして、切り抜く範囲を赤枠で囲んでください。`;
+                    
+                    // 初期表示のボタン状態
+                    scoreBtn.classList.add('selected');
+                    handoutBtn.classList.remove('selected');
+                    jpgBtn.style.display = 'block';
+                    toggleDownloadButtons(false);
+                };
+                firstImageElement.src = event.target.result;
             };
-            firstImageElement.src = event.target.result;
-        };
-        reader.readAsDataURL(files[0]);
+            reader.readAsDataURL(files[0]);
+        } catch (err) {
+            log.style.color = "#e74c3c";
+            log.textContent = "ファイル読み込みエラー: " + err.message;
+        }
     });
 
-    // 2. タッチ操作による範囲指定
+    // 2. タッチ操作（iPad・スマホ対応）
     function getTouchPos(canvas, e) {
         var rect = canvas.getBoundingClientRect();
         var scaleX = canvas.width / rect.width;
@@ -149,10 +172,12 @@
 
         if (w > 10 && h > 10) {
             cropArea = { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
-            log.textContent = `範囲を確定しました（横:${w}px, 縦:${h}px）。ボタンを押して保存してください。`;
+            log.style.color = "#2ecc71";
+            log.textContent = `範囲確定（横:${w}px, 縦:${h}px）。保存ボタンを押してください。`;
             toggleDownloadButtons(true);
         } else {
-            log.textContent = `ドラッグの範囲が狭すぎます。もう一度囲んでください。`;
+            log.style.color = "#e74c3c";
+            log.textContent = `ドラッグの範囲が狭すぎます。もう一度しっかり囲んでください。`;
             toggleDownloadButtons(false);
         }
         isDrawing = false;
@@ -165,7 +190,6 @@
             btn.classList.add('selected');
             selectedMode = btn.id.replace('-btn', '');
             
-            // 講義資料モードの時は、縦連結ではないのでファイルが複数になるため「JPG保存」を制限
             if (selectedMode === 'handout') {
                 jpgBtn.style.display = 'none';
             } else {
@@ -174,36 +198,28 @@
         });
     });
 
-    function toggleDownloadButtons(enable) {
-        jpgBtn.disabled = !enable;
-        pdfBtn.disabled = !enable;
-    }
-
-    // 4. コアロジック：すべての画像をトリミングして「1枚の新しいCanvas」に合成する
+    // 4. 新しい画像をCanvas上で生成するコアロジック
     async function generateFinalCanvas() {
-        log.textContent = "全画像をトリミングして、新しい画像を1から生成中...";
+        log.style.color = "#666";
+        log.textContent = "新画像をメモリ内で結合しています...";
         
-        // 1枚分のトリミングサイズで作業用Canvasを作る
         const workCanvas = document.createElement('canvas');
         workCanvas.width = cropArea.w;
         workCanvas.height = cropArea.h;
         const workCtx = workCanvas.getContext('2d');
 
-        // 出力用のCanvas（楽譜なら縦に超長い、講義資料なら1枚分）
         const finalCanvas = document.createElement('canvas');
         finalCanvas.width = cropArea.w;
         
         if (selectedMode === 'score') {
-            // 楽譜モード：隙間なく縦に並べるので、高さは【1枚の高さ × 総枚数】
             finalCanvas.height = cropArea.h * files.length;
         } else {
-            // 講義資料モード：1ページずつ処理するので高さは1枚分
             finalCanvas.height = cropArea.h;
         }
         const finalCtx = finalCanvas.getContext('2d');
 
         let currentY = 0;
-        let imagesDataArray = []; // 講義資料PDF用のデータ配列
+        let imagesDataArray = [];
 
         for (let i = 0; i < files.length; i++) {
             await new Promise((resolve) => {
@@ -212,18 +228,15 @@
                     const img = new Image();
                     img.onload = () => {
                         workCtx.clearRect(0, 0, cropArea.w, cropArea.h);
-                        // 元画像から必要な部分だけを切り抜いてworkCanvasに描画
                         workCtx.drawImage(img, cropArea.x, cropArea.y, cropArea.w, cropArea.h, 0, 0, cropArea.w, cropArea.h);
                         
                         if (selectedMode === 'score') {
-                            // 楽譜：縦長Canvasの現在のY座標に上から順番に隙間なく貼り付ける
                             finalCtx.drawImage(workCanvas, 0, currentY);
                             currentY += cropArea.h;
                         } else {
-                            // 講義資料：各ページの純粋な切り抜きJPGデータを配列に保存していく
                             imagesDataArray.push(workCanvas.toDataURL('image/jpeg', 0.9));
                         }
-                        log.textContent = `処理中: ${i + 1} / ${files.length} 枚目...`;
+                        log.textContent = `画像加工中: ${i + 1} / ${files.length} 枚目...`;
                         resolve();
                     };
                     img.src = event.target.result;
@@ -231,31 +244,64 @@
                 reader.readAsDataURL(files[i]);
             });
         }
-        
         return { canvas: finalCanvas, handoutData: imagesDataArray };
     }
 
-    // 5. JPGとしてダウンロードを実行（楽譜モード専用）
+    // 5. JPGダウンロード
     jpgBtn.addEventListener('click', async () => {
         toggleDownloadButtons(false);
         const result = await generateFinalCanvas();
         
-        log.textContent = "JPG画像を生成してダウンロードしています...";
         const link = document.createElement('a');
         link.download = 'combined_sheet_music.jpg';
         link.href = result.canvas.toDataURL('image/jpeg', 0.9);
         link.click();
         
-        log.textContent = "✅ JPG画像のダウンロードが完了しました！";
+        log.style.color = "#2ecc71";
+        log.textContent = "✅ 余白なしJPG画像の生成・保存に成功しました！";
         toggleDownloadButtons(true);
     });
 
-    // 6. PDFとしてダウンロードを実行（両モード対応）
+    // 6. PDFダウンロード
     pdfBtn.addEventListener('click', async () => {
         toggleDownloadButtons(false);
         const result = await generateFinalCanvas();
         
-        log.textContent = "PDFファイルを構築中...";
+        log.textContent = "PDFファイルへ変換中...";
+        
+        // 巻き添えエラー対策：jsPDFの参照を「ボタンを押したこの瞬間」に実行する
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+            log.style.color = "#e74c3c";
+            log.textContent = "エラー: PDFライブラリの読み込みがまだ完了していません。通信環境の良い場所でもう一度お試しください。";
+            toggleDownloadButtons(true);
+            return;
+        }
         const { jsPDF } = window.jspdf;
         
-        // 内部計算
+        const ptW = cropArea.w * 0.75;
+        const ptH = cropArea.h * 0.75;
+
+        if (selectedMode === 'score') {
+            const totalPtH = ptH * files.length;
+            const pdf = new jsPDF('p', 'pt', [ptW, totalPtH]);
+            const imgData = result.canvas.toDataURL('image/jpeg', 0.9);
+            pdf.addImage(imgData, 'JPEG', 0, 0, ptW, totalPtH);
+            pdf.save('combined_sheet_music.pdf');
+        } else {
+            const orientation = cropArea.w >= cropArea.h ? 'l' : 'p';
+            const pdf = new jsPDF(orientation, 'pt', [ptW, ptH]);
+            
+            for (let i = 0; i < result.handoutData.length; i++) {
+                if (i > 0) pdf.addPage([ptW, ptH], orientation);
+                pdf.addImage(result.handoutData[i], 'JPEG', 0, 0, ptW, ptH);
+            }
+            pdf.save('handout_material.pdf');
+        }
+        
+        log.style.color = "#2ecc71";
+        log.textContent = "✅ 余白なしPDFファイルの生成・保存に成功しました！";
+        toggleDownloadButtons(true);
+    });
+</script>
+</body>
+</html>
