@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>プロ仕様 画像一括トリミングツール</title>
+    <title>画像一括トリミングツール　20260701 v0.2</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         body { font-family: sans-serif; margin: 0; padding: 10px; background: #f0f0f0; -webkit-user-select: none; user-select: none; }
@@ -11,20 +11,19 @@
         h1 { text-align: center; color: #333; font-size: 1.2rem; margin-bottom: 5px; }
         input[type="file"] { display: block; margin: 15px auto; width: 100%; }
         
-        /* 拡大ルーペのスタイル */
-        .loupe-wrapper { display: flex; flex-direction: column; align-items: center; margin-bottom: 10px; display: none; }
-        .loupe-title { font-size: 0.8rem; color: #e67e22; font-weight: bold; margin-bottom: 2px; }
-        #loupe-canvas { border: 3px solid #e67e22; border-radius: 50%; background: white; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-
-        #canvas-container { position: relative; width: 100%; border: 2px solid #ccc; overflow: hidden; display: none; }
+        #canvas-container { position: relative; width: 100%; border: 2px solid #ccc; overflow: hidden; display: none; margin-top: 10px; }
         canvas { width: 100%; display: block; background: #fff; }
         
-        /* 比率選択UI */
+        /* 比率・設定セクション */
         .config-section { text-align: center; margin-top: 10px; display: none; background: #f9f9f9; padding: 10px; border-radius: 5px; }
         .config-title { font-size: 0.85rem; color: #555; margin: 0 0 8px 0; font-weight: bold; }
-        .ratio-buttons { display: flex; justify-content: center; gap: 8px; margin-bottom: 10px; }
-        button.ratio-btn { flex: 1; padding: 6px; background: white; color: #555; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; cursor: pointer; }
-        button.ratio-btn.selected { background: #e67e22; color: white; border-color: #e67e22; font-weight: bold; }
+        .ratio-buttons { display: flex; justify-content: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+        button.ratio-btn { flex: 1; min-width: 70px; padding: 8px 6px; background: white; color: #555; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; cursor: pointer; font-weight: bold; }
+        button.ratio-btn.selected { background: #e67e22; color: white; border-color: #e67e22; }
+        
+        /* 自由入力欄のスタイル */
+        .custom-ratio-container { display: none; margin-top: 8px; margin-bottom: 12px; align-items: center; justify-content: center; gap: 5px; font-size: 0.9rem; color: #333; }
+        .custom-ratio-container input { width: 60px; padding: 5px; text-align: center; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; font-weight: bold; }
 
         .mode-buttons { display: flex; justify-content: center; gap: 10px; margin-top: 5px; }
         button.choice { flex: 1; padding: 10px; background: white; color: #007bff; border: 2px solid #007bff; border-radius: 5px; font-size: 0.9rem; font-weight: bold; cursor: pointer; }
@@ -44,11 +43,6 @@
         <h1>画像一括トリミング＆結合</h1>
         
         <input type="file" id="files-input" multiple accept="image/png, image/jpeg">
-        
-        <div class="loupe-wrapper" id="loupe-wrapper">
-            <span class="loupe-title">境界 拡大プレビュー</span>
-            <canvas id="loupe-canvas" width="130" height="130"></canvas>
-        </div>
 
         <div id="canvas-container">
             <canvas id="crop-canvas"></canvas>
@@ -57,9 +51,16 @@
         <div class="config-section" id="config-section">
             <p class="config-title">1. 比率の制約を選択</p>
             <div class="ratio-buttons">
-                <button class="ratio-btn selected" data-ratio="free">自由 (制約なし)</button>
+                <button class="ratio-btn selected" data-ratio="free">自由</button>
                 <button class="ratio-btn" data-ratio="16:9">16:9</button>
                 <button class="ratio-btn" data-ratio="4:3">4:3</button>
+                <button class="ratio-btn" data-ratio="custom">自由入力</button>
+            </div>
+            
+            <div class="custom-ratio-container" id="custom-ratio-inputs">
+                <input type="number" id="ratio-w" value="1" min="0.1" step="0.1">
+                <span>：</span>
+                <input type="number" id="ratio-h" value="1" min="0.1" step="0.1">
             </div>
             
             <p class="config-title">2. まとめる形式を選択</p>
@@ -83,8 +84,7 @@
 <script>
     window.onerror = function(msg, url, line) {
         const log = document.getElementById('log');
-        log.style.color = "#e74c3c";
-        log.style.background = "#fdf2f2";
+        log.style.color = "#e74c3c"; log.style.background = "#fdf2f2";
         log.textContent = "エラー: " + msg + " (Line: " + line + ")";
         return false;
     };
@@ -94,12 +94,12 @@
     const cropCanvas = document.getElementById('crop-canvas');
     const ctx = cropCanvas.getContext('2d');
     
-    const loupeWrapper = document.getElementById('loupe-wrapper');
-    const loupeCanvas = document.getElementById('loupe-canvas');
-    const loupeCtx = loupeCanvas.getContext('2d');
-
     const configSection = document.getElementById('config-section');
     const ratioButtons = document.querySelectorAll('.ratio-btn');
+    const customRatioInputs = document.getElementById('custom-ratio-inputs');
+    const ratioW = document.getElementById('ratio-w');
+    const ratioH = document.getElementById('ratio-h');
+
     const handoutBtn = document.getElementById('handout-btn');
     const scoreBtn = document.getElementById('score-btn');
     const outputSection = document.getElementById('output-section');
@@ -110,15 +110,15 @@
     let files = [];
     let cropArea = null; 
     let selectedMode = 'score'; 
-    let currentRatio = 'free'; // 'free', '16:9', '4:3'
+    let currentRatio = 'free'; 
     let firstImageElement = null;
 
-    // インタラクション用状態変数
     let touchState = {
-        mode: 'none', // 'none', 'create', 'move', 'resize'
-        targetHandle: -1, // 0~7 のハンドルインデックス
+        mode: 'none', 
+        targetHandle: -1, 
         startX: 0, startY: 0,
-        initArea: null
+        initArea: null,
+        currentX: 0, currentY: 0 // ルーペ描画追跡用
     };
 
     function toggleDownloadButtons(enable) {
@@ -129,16 +129,20 @@
     function getRatioValue() {
         if (currentRatio === '16:9') return 16 / 9;
         if (currentRatio === '4:3') return 4 / 3;
+        if (currentRatio === 'custom') {
+            const w = parseFloat(ratioW.value) || 1;
+            const h = parseFloat(ratioH.value) || 1;
+            return w / h;
+        }
         return null;
     }
 
-    // 1. ファイル読み込み
+    // ファイル読み込み
     filesInput.addEventListener('change', (e) => {
         files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
         if (files.length === 0) return;
 
-        log.style.color = "#666";
-        log.style.background = "#f0f0f0";
+        log.style.color = "#666"; log.style.background = "#f0f0f0";
         log.textContent = `${files.length} 枚の画像を読み込み中...`;
         
         const reader = new FileReader();
@@ -148,9 +152,9 @@
                 cropCanvas.width = firstImageElement.width;
                 cropCanvas.height = firstImageElement.height;
                 
-                // 初期のトリミング範囲を自動で中央に仮配置（後からいくらでも編集可能）
                 const w = Math.round(cropCanvas.width * 0.8);
-                const h = Math.round(currentRatio === 'free' ? cropCanvas.height * 0.2 : w / getRatioValue());
+                const rVal = getRatioValue();
+                const h = Math.round(currentRatio === 'free' ? cropCanvas.height * 0.2 : w / rVal);
                 const x = Math.round((cropCanvas.width - w) / 2);
                 const y = Math.round((cropCanvas.height - h) / 2);
                 cropArea = { x, y, w, h };
@@ -159,8 +163,7 @@
                 configSection.style.display = 'block';
                 outputSection.style.display = 'block';
                 
-                log.style.color = "#666";
-                log.style.background = "#f9f9f9";
+                log.style.color = "#666"; log.style.background = "#f9f9f9";
                 log.textContent = `編集モード：枠の四角いハンドルをドラッグして微調整してください。内側ドラッグで移動。`;
                 
                 scoreBtn.classList.add('selected');
@@ -174,25 +177,38 @@
         reader.readAsDataURL(files[0]);
     });
 
-    // 比率ボタンの切り替え
+    // 比率ボタン切り替え
     ratioButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             ratioButtons.forEach(b => b.classList.remove('selected'));
             btn.classList.add('selected');
             currentRatio = btn.getAttribute('data-ratio');
             
-            if (cropArea && currentRatio !== 'free') {
-                const ratio = getRatioValue();
-                cropArea.h = Math.round(cropArea.w / ratio);
-                // 画像の下限をオーバーした際の安全処理
-                if (cropArea.y + cropArea.h > cropCanvas.height) {
-                    cropArea.h = cropCanvas.height - cropArea.y;
-                    cropArea.w = Math.round(cropArea.h * ratio);
-                }
-                draw();
+            if (currentRatio === 'custom') {
+                customRatioInputs.style.display = 'flex';
+            } else {
+                customRatioInputs.style.display = 'none';
             }
+            applyRatioConstraint();
         });
     });
+
+    // 自由入力値の変更検知
+    [ratioW, ratioH].forEach(input => {
+        input.addEventListener('input', applyRatioConstraint);
+    });
+
+    function applyRatioConstraint() {
+        if (cropArea && currentRatio !== 'free') {
+            const ratio = getRatioValue();
+            cropArea.h = Math.round(cropArea.w / ratio);
+            if (cropArea.y + cropArea.h > cropCanvas.height) {
+                cropArea.h = cropCanvas.height - cropArea.y;
+                cropArea.w = Math.round(cropArea.h * ratio);
+            }
+            draw();
+        }
+    }
 
     // モード切り替え
     [handoutBtn, scoreBtn].forEach(btn => {
@@ -204,7 +220,6 @@
         });
     });
 
-    // ハンドルの位置配列を計算する関数
     function getHandles(area) {
         const x = area.x; const y = area.y; const w = area.w; const h = area.h;
         return [
@@ -219,64 +234,88 @@
         ];
     }
 
-    // メメインキャンバスの描画処理（暗いマスク＋バウンディングボックス＋ハンドル）
+    // メイン描画エンジン（インライン四角ルーペ機能内蔵）
     function draw() {
         if (!firstImageElement || !cropArea) return;
         
         ctx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
         ctx.drawImage(firstImageElement, 0, 0);
 
-        // 1. トリミング枠の外側を暗くする（半透明黒マスク）
+        // 1. 周辺マスク
         ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
-        ctx.fillRect(0, 0, cropCanvas.width, 0, cropArea.y); // 上
-        ctx.fillRect(0, cropArea.y + cropArea.h, cropCanvas.width, cropCanvas.height - (cropArea.y + cropArea.h)); // 下
-        ctx.fillRect(0, cropArea.y, cropArea.x, cropArea.h); // 左
-        ctx.fillRect(cropArea.x + cropArea.w, cropArea.y, cropCanvas.width - (cropArea.x + cropArea.w), cropArea.h); // 右
+        ctx.fillRect(0, 0, cropCanvas.width, cropArea.y); 
+        ctx.fillRect(0, cropArea.y + cropArea.h, cropCanvas.width, cropCanvas.height - (cropArea.y + cropArea.h)); 
+        ctx.fillRect(0, cropArea.y, cropArea.x, cropArea.h); 
+        ctx.fillRect(cropArea.x + cropArea.w, cropArea.y, cropCanvas.width - (cropArea.x + cropArea.w), cropArea.h); 
 
-        // 2. メインの赤い境界線を描画
+        // 2. 赤い境界線
         ctx.strokeStyle = "#ff3333";
         ctx.lineWidth = Math.max(3, cropCanvas.width / 350);
         ctx.strokeRect(cropArea.x, cropArea.y, cropArea.w, cropArea.h);
 
-        // 3. 8箇所の四角いハンドルを描画（辺の真ん中＋4隅）
+        // 3. 通常の8箇所ハンドル描画
         const handles = getHandles(cropArea);
-        const hSize = Math.max(14, cropCanvas.width / 70); // 指で視認しやすいサイズ
+        const hSize = Math.max(14, cropCanvas.width / 70); 
         
         ctx.fillStyle = "#ffffff";
         ctx.strokeStyle = "#007bff";
         ctx.lineWidth = Math.max(2, cropCanvas.width / 500);
 
-        handles.forEach(h => {
+        handles.forEach((h, idx) => {
+            // 現在ドラッグ変形中のハンドル（リサイズ時）は、ここでは描画せず後段の大きくなったルーペ処理に回す
+            if (touchState.mode === 'resize' && touchState.targetHandle === idx) return;
             ctx.fillRect(h.x - hSize/2, h.y - hSize/2, hSize, hSize);
             ctx.strokeRect(h.x - hSize/2, h.y - hSize/2, hSize, hSize);
         });
+
+        // 4. 【核心機能】ドラッグ中、四角いハンドルを巨大化させてその中に拡大境界線を表示する
+        if (touchState.mode !== 'none' && (touchState.mode === 'resize' || touchState.mode === 'create')) {
+            // ルーペとなる四角い窓のサイズ設定 (元サイズの約5倍〜6倍に拡大した四角形)
+            const loupeSize = Math.max(110, cropCanvas.width * 0.26);
+            
+            // 表示位置の計算：スマホの指で隠れないよう、タッチしている座標の少し上（または下）にオフセット
+            let lX = touchState.currentX - loupeSize / 2;
+            let lY = touchState.currentY - loupeSize - (cropCanvas.width / 12); 
+            
+            // 画面最上部を突き抜ける場合は、指の下側に表示位置を避ける安全ロジック
+            if (lY < 0) lY = touchState.currentY + (cropCanvas.width / 12);
+            if (lX < 0) lX = 0;
+            if (lX + loupeSize > cropCanvas.width) lX = cropCanvas.width - loupeSize;
+
+            ctx.save();
+            // 四角いルーペのベース（白土台）
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(lX, lY, loupeSize, loupeSize);
+            
+            // 切り取る中心（現在動かしているポイント）
+            const srcX = touchState.currentX;
+            const srcY = touchState.currentY;
+            const srcSize = 36; // 視野の広さ（小さいほど高倍率になる）
+
+            // マスクのかかっていない元の画像から直接、四角い窓の中へ拡大転写（約3倍拡大）
+            ctx.drawImage(
+                firstImageElement,
+                srcX - srcSize/2, srcY - srcSize/2, srcSize, srcSize,
+                lX, lY, loupeSize, loupeSize
+            );
+
+            // ルーペ自体の「四角い枠線」を太めのオレンジで強調描画
+            ctx.strokeStyle = "#e67e22";
+            ctx.lineWidth = Math.max(4, cropCanvas.width / 250);
+            ctx.strokeRect(lX, lY, loupeSize, loupeSize);
+
+            // 精密照準のための十字架
+            ctx.strokeStyle = "rgba(230, 126, 34, 0.7)";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(lX + loupeSize/2, lY); ctx.lineTo(lX + loupeSize/2, lY + loupeSize);
+            ctx.moveTo(lX, lY + loupeSize/2); ctx.lineTo(lX + loupeSize, lY + loupeSize/2);
+            ctx.stroke();
+            ctx.restore();
+        }
     }
 
-    // ルーペ（拡大プレビュー窓）の更新
-    function updateLoupe(targetCanvasX, targetCanvasY) {
-        loupeWrapper.style.display = 'flex';
-        loupeCtx.clearRect(0, 0, loupeCanvas.width, loupeCanvas.height);
-        
-        // タッチされた周辺44pxの正方形を、130pxの円形キャンバスに約3倍拡大描画
-        const srcSize = 44;
-        const destSize = 130;
-        
-        loupeCtx.drawImage(
-            cropCanvas,
-            targetCanvasX - srcSize/2, targetCanvasY - srcSize/2, srcSize, srcSize,
-            0, 0, destSize, destSize
-        );
-        
-        // ルーペの中心に照準（十字マーク）を描画
-        loupeCtx.strokeStyle = "#e67e22";
-        loupeCtx.lineWidth = 2;
-        loupeCtx.beginPath();
-        loupeCtx.moveTo(destSize/2, 0); loupeCtx.lineTo(destSize/2, destSize);
-        loupeCtx.moveTo(0, destSize/2); loupeCtx.lineTo(destSize, destSize/2);
-        loupeCtx.stroke();
-    }
-
-    // 2. タッチ操作（iPad・スマホ対応）のインタラクション
+    // タッチ座標取得
     function getTouchPos(canvas, e) {
         var rect = canvas.getBoundingClientRect();
         var scaleX = canvas.width / rect.width;
@@ -292,38 +331,33 @@
         if (!firstImageElement || !cropArea) return;
         const pos = getTouchPos(cropCanvas, e);
         
-        // 当たり判定の広さ（表示上35px相当に動的計算）
-        const touchThreshold = (cropCanvas.width / cropCanvas.offsetWidth) * 35;
+        const touchThreshold = (cropCanvas.width / cropCanvas.offsetWidth) * 38;
         const handles = getHandles(cropArea);
         
         let hitHandle = -1;
         for (let i = 0; i < handles.length; i++) {
             const dist = Math.hypot(pos.x - handles[i].x, pos.y - handles[i].y);
-            if (dist < touchThreshold) {
-                hitHandle = i;
-                break;
-            }
+            if (dist < touchThreshold) { hitHandle = i; break; }
         }
 
         touchState.startX = pos.x;
         touchState.startY = pos.y;
+        touchState.currentX = pos.x;
+        touchState.currentY = pos.y;
         touchState.initArea = { ...cropArea };
 
         if (hitHandle !== -1) {
-            // ハンドルが掴まれた場合（リサイズ変形モード）
             touchState.mode = 'resize';
             touchState.targetHandle = hitHandle;
-            updateLoupe(pos.x, pos.y);
         } else if (pos.x >= cropArea.x && pos.x <= cropArea.x + cropArea.w &&
                    pos.y >= cropArea.y && pos.y <= cropArea.y + cropArea.h) {
-            // 枠の内側が掴まれた場合（平行移動モード）
             touchState.mode = 'move';
         } else {
-            // 枠の外側が掴まれた場合（最初から引き直しモード）
             touchState.mode = 'create';
             touchState.initArea = { x: pos.x, y: pos.y, w: 0, h: 0 };
             cropArea = { x: pos.x, y: pos.y, w: 10, h: 10 };
         }
+        draw();
         e.preventDefault();
     }, {passive: false});
 
@@ -331,18 +365,19 @@
         if (touchState.mode === 'none' || !firstImageElement) return;
         const pos = getTouchPos(cropCanvas, e);
         
+        touchState.currentX = pos.x;
+        touchState.currentY = pos.y;
+        
         const dx = pos.x - touchState.startX;
         const dy = pos.y - touchState.startY;
         const init = touchState.initArea;
         const ratio = getRatioValue();
 
         if (touchState.mode === 'move') {
-            // 【移動】
             cropArea.x = Math.max(0, Math.min(cropCanvas.width - init.w, init.x + dx));
             cropArea.y = Math.max(0, Math.min(cropCanvas.height - init.h, init.y + dy));
         } 
         else if (touchState.mode === 'create') {
-            // 【新規引き直し】
             let newW = pos.x - init.x;
             let newH = currentRatio === 'free' ? (pos.y - init.y) : newW / ratio;
             
@@ -350,52 +385,39 @@
             cropArea.y = newH >= 0 ? init.y : init.y + newH;
             cropArea.w = Math.abs(newW);
             cropArea.h = Math.abs(newH);
-            updateLoupe(pos.x, pos.y);
         } 
         else if (touchState.mode === 'resize') {
-            // 【ハンドル変形（比率維持対応）】
             let hIdx = touchState.targetHandle;
             let left = init.x; let top = init.y;
             let right = init.x + init.w; let bottom = init.y + init.h;
 
-            // X軸方向の変動
             if (hIdx === 0 || hIdx === 6 || hIdx === 7) left = Math.min(right - 20, init.x + dx);
             if (hIdx === 2 || hIdx === 3 || hIdx === 4) right = Math.max(left + 20, init.x + init.w + dx);
-            // Y軸方向の変動
             if (hIdx === 0 || hIdx === 1 || hIdx === 2) top = Math.min(bottom - 20, init.y + dy);
             if (hIdx === 4 || hIdx === 5 || hIdx === 6) bottom = Math.max(top + 20, init.y + init.h + dy);
 
-            let w = right - left;
-            let h = bottom - top;
+            let w = right - left; let h = bottom - top;
 
             if (currentRatio !== 'free') {
-                // アスペクト比が固定されている場合の連動変形計算
-                if (hIdx === 3 || hIdx === 7) { // 左右中央ハンドル
-                    h = w / ratio;
-                    top = init.y - (h - init.h) / 2; // 中心を軸に上下に広げる
-                    bottom = top + h;
-                } else if (hIdx === 1 || hIdx === 5) { // 上下中央ハンドル
-                    w = h * ratio;
-                    left = init.x - (w - init.w) / 2; // 中心を軸に左右に広げる
-                    right = left + w;
+                if (hIdx === 3 || hIdx === 7) { 
+                    h = w / ratio; top = init.y - (h - init.h) / 2; bottom = top + h;
+                } else if (hIdx === 1 || hIdx === 5) { 
+                    w = h * ratio; left = init.x - (w - init.w) / 2; right = left + w;
                 } else {
-                    // 4隅のハンドルは対角の点を固定してアスペクト比を維持
                     if (w / h > ratio) { h = w / ratio; } else { w = h * ratio; }
-                    if (hIdx === 0) { left = right - w; top = bottom - h; }   // 左上
-                    if (hIdx === 2) { right = left + w; top = bottom - h; }   // 右上
-                    if (hIdx === 4) { right = left + w; bottom = top + h; }   // 右下
-                    if (hIdx === 6) { left = right - w; bottom = top + h; }   // 左下
+                    if (hIdx === 0) { left = right - w; top = bottom - h; }   
+                    if (hIdx === 2) { right = left + w; top = bottom - h; }   
+                    if (hIdx === 4) { right = left + w; bottom = top + h; }   
+                    if (hIdx === 6) { left = right - w; bottom = top + h; }   
                 }
             }
 
-            // 安全のための画面外はみ出し防止ガード
             if (left >= 0 && right <= cropCanvas.width && top >= 0 && bottom <= cropCanvas.height) {
                 cropArea = {
                     x: Math.round(left), y: Math.round(top),
                     w: Math.round(right - left), h: Math.round(bottom - top)
                 };
             }
-            updateLoupe(pos.x, pos.y);
         }
 
         draw();
@@ -404,13 +426,12 @@
 
     cropCanvas.addEventListener('touchend', (e) => {
         touchState.mode = 'none';
-        loupeWrapper.style.display = 'none'; // 指を離したらルーペを隠す
+        draw(); // ルーペを消すために再描画
         log.style.color = "#2ecc71";
         log.textContent = `範囲確定（横:${cropArea.w}px, 縦:${cropArea.h}px）。保存形式を選んでダウンロードしてください。`;
     }, {passive: false});
 
-
-    // 4. 画像加工コアロジック（完全に新しいCanvasを1から焼き付ける）
+    // 画像加工コアロジック
     async function generateFinalCanvas() {
         log.style.color = "#666";
         log.textContent = "指定された範囲だけで新しい画像を1から合成しています...";
@@ -454,34 +475,27 @@
         return { canvas: finalCanvas, handoutData: imagesDataArray };
     }
 
-    // 5. JPGダウンロード
+    // JPGダウンロード
     jpgBtn.addEventListener('click', async () => {
         toggleDownloadButtons(false);
         const result = await generateFinalCanvas();
-        
         const link = document.createElement('a');
         link.download = 'combined_sheet_music.jpg';
         link.href = result.canvas.toDataURL('image/jpeg', 0.92);
         link.click();
-        
-        log.style.color = "#2ecc71";
-        log.textContent = "✅ 完全余白なしJPG画像の保存に成功しました！";
+        log.style.color = "#2ecc71"; log.textContent = "✅ 完全余白なしJPG画像の保存に成功しました！";
         toggleDownloadButtons(true);
     });
 
-    // 6. PDFダウンロード
+    // PDFダウンロード
     pdfBtn.addEventListener('click', async () => {
         toggleDownloadButtons(false);
         const result = await generateFinalCanvas();
-        
-        log.style.color = "#666";
-        log.textContent = "PDF変換を実行中...";
+        log.style.color = "#666"; log.textContent = "PDF変換を実行中...";
         
         if (!window.jspdf || !window.jspdf.jsPDF) {
-            log.style.color = "#e74c3c";
-            log.textContent = "エラー: ライブラリのロードが未完了です。少し待って再試行してください。";
-            toggleDownloadButtons(true);
-            return;
+            log.style.color = "#e74c3c"; log.textContent = "エラー: ライブラリ未ロード。";
+            toggleDownloadButtons(true); return;
         }
         const { jsPDF } = window.jspdf;
         const ptW = cropArea.w * 0.75;
@@ -503,9 +517,7 @@
             }
             pdf.save('handout_material.pdf');
         }
-        
-        log.style.color = "#2ecc71";
-        log.textContent = "✅ 完全余白なしPDFファイルの保存に成功しました！";
+        log.style.color = "#2ecc71"; log.textContent = "✅ 完全余白なしPDFファイルの保存に成功しました！";
         toggleDownloadButtons(true);
     });
 </script>
