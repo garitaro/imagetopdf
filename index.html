@@ -41,7 +41,7 @@
 <body>
     <div class="container">
         <h1>画像一括トリミング＆結合</h1>
-        <p style="font-size:0.8rem; text-align:center; color: #666; margin: 0;" id="version-display">仕様：インライン・ハンドルレンズ方式</p>
+        <p style="font-size:0.8rem; text-align:center; color: #666; margin: 0;" id="version-display"></p>
         
         <input type="file" id="files-input" multiple accept="image/png, image/jpeg">
 
@@ -66,8 +66,8 @@
             
             <p class="config-title">2. まとめる形式を選択</p>
             <div class="mode-buttons">
-                <button class="choice" id="handout-btn">講義資料 (ページ分割)</button>
-                <button class="choice" id="score-btn">楽譜 (縦に1枚に連結)</button>
+                <button class="choice" id="handout-btn">分割してPDF化</button>
+                <button class="choice" id="score-btn">縦に連結してPDF化</button>
             </div>
         </div>
 
@@ -84,16 +84,16 @@
 
 <script>
     // ==========================================
-    // ★ バージョン設定（ここを変更するだけで一括反映されます）
+    // ★ バージョン設定（ここを変更するだけで反映されます）
     // ==========================================
-    const APP_VERSION = "v0.3"; 
+    const APP_VERSION = "v1.1.0"; 
 
-    // 起動時にバージョンを各タイトルに動的に反映する処理
+    // 起動時の初期化処理
     (function initVersion() {
         document.title = `画像一括トリミングツール (${APP_VERSION})`;
         const displayEl = document.getElementById('version-display');
         if (displayEl) {
-            displayEl.textContent = `仕様：インライン・ハンドルレンズ方式 (${APP_VERSION})`;
+            displayEl.textContent = `(${APP_VERSION})`; // 仕様テキストを削除してバージョンのみを表示
         }
     })();
 
@@ -141,7 +141,6 @@
         pdfBtn.disabled = !enable;
     }
 
-    // （中略：画像処理コアロジック、タッチインタラクション、JPG/PDF書き出し処理は前回の最高精度のまま維持されています）
     function getRatioValue() {
         if (currentRatio === '16:9') return 16 / 9;
         if (currentRatio === '4:3') return 4 / 3;
@@ -179,7 +178,7 @@
                 outputSection.style.display = 'block';
                 
                 log.style.color = "#666"; log.style.background = "#f9f9f9";
-                log.textContent = `編集モード：辺の四角形ハンドルをドラッグすると、その場が巨大ルーペ化します。`;
+                log.textContent = `トリミング範囲を微調整して、下の保存形式を選んでください。`;
                 
                 scoreBtn.classList.add('selected');
                 handoutBtn.classList.remove('selected');
@@ -228,14 +227,14 @@
     function getHandles(area) {
         const x = area.x; const y = area.y; const w = area.w; const h = area.h;
         return [
-            { x: x, y: y },          // 0: 左上
-            { x: x + w/2, y: y },    // 1: 上中央
-            { x: x + w, y: y },      // 2: 右上
-            { x: x + w, y: y + h/2 },// 3: 右中央
-            { x: x + w, y: y + h },  // 4: 右下
-            { x: x + w/2, y: y + h },// 5: 下中央
-            { x: x, y: y + h },      // 6: 左下
-            { x: x, y: y + h/2 }     // 7: 左中央
+            { x: x, y: y },          
+            { x: x + w/2, y: y },    
+            { x: x + w, y: y },      
+            { x: x + w, y: y + h/2 },
+            { x: x + w, y: y + h },  
+            { x: x + w/2, y: y + h },
+            { x: x, y: y + h },      
+            { x: x, y: y + h/2 }     
         ];
     }
 
@@ -246,7 +245,7 @@
 
         ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
         ctx.fillRect(0, 0, cropCanvas.width, cropArea.y); 
-        ctx.fillRect(0, cropArea.y + cropArea.h, cropCanvas.width, cropCanvas.height - (cropArea.y + cropArea.h)); 
+        ctx.fillRect(0, cropArea.y + cropArea.h, cropCanvas.width, canvasContainer.offsetHeight); 
         ctx.fillRect(0, cropArea.y, cropArea.x, cropArea.h); 
         ctx.fillRect(cropArea.x + cropArea.w, cropArea.y, cropCanvas.width - (cropArea.x + cropArea.w), cropArea.h); 
 
@@ -386,7 +385,7 @@
     cropCanvas.addEventListener('touchend', (e) => {
         touchState.mode = 'none'; draw(); 
         log.style.color = "#2ecc71";
-        log.textContent = `範囲確定（横:${cropArea.w}px, 縦:${cropArea.h}px）。保存形式を選んでダウンロードしてください。`;
+        log.textContent = `範囲確定（横:${cropArea.w}px, 縦:${cropArea.h}px）。保存する形式を押してください。`;
     }, {passive: false});
 
     async function generateFinalCanvas() {
