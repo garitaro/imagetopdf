@@ -103,7 +103,7 @@
     // ==========================================
     // ★ バージョン設定
     // ==========================================
-    const APP_VERSION = "v1.4.0"; 
+    const APP_VERSION = "v1.5.0"; 
 
     (function initVersion() {
         document.title = `画像一括トリミングツール (${APP_VERSION})`;
@@ -252,6 +252,7 @@
         ];
     }
 
+    // 描画エンジン（インライン・ハンドルレンズ内蔵）
     function draw() {
         if (!firstImageElement || !cropArea) return;
         ctx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
@@ -470,7 +471,9 @@
                 pdfH = pdfW * (totalCanvasH / cropArea.w); 
             }
 
-            const pdf = new jsPDF('p', 'pt', [pdfW, pdfH]);
+            // ★ 用紙の縦横比を判定して向き(pかl)を自動的に動的指定（逆向き・90度回転バグを完全解消）
+            const orientation = pdfW >= pdfH ? 'l' : 'p';
+            const pdf = new jsPDF(orientation, 'pt', [pdfW, pdfH]);
             const imgData = result.canvas.toDataURL('image/jpeg', 0.9);
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
             pdf.save('combined_sheet_music.pdf');
@@ -484,10 +487,12 @@
                 pageH = basePtW * (cropArea.h / cropArea.w); 
             }
 
-            const pdf = new jsPDF('p', 'pt', [pageW, pageH]);
+            // ★ 用紙の縦横比を判定して向き(pかl)を自動的に動的指定（逆向き・90度回転バグを完全解消）
+            const orientation = pageW >= pageH ? 'l' : 'p';
+            const pdf = new jsPDF(orientation, 'pt', [pageW, pageH]);
             
             for (let i = 0; i < result.handoutData.length; i++) {
-                if (i > 0) pdf.addPage([pageW, pageH], 'p');
+                if (i > 0) pdf.addPage([pageW, pageH], orientation);
                 pdf.addImage(result.handoutData[i], 'JPEG', 0, 0, pageW, pageH);
             }
             pdf.save('handout_material.pdf');
