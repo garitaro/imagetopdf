@@ -103,7 +103,7 @@
     // ==========================================
     // ★ バージョン設定
     // ==========================================
-    const APP_VERSION = "v1.3.02"; 
+    const APP_VERSION = "v1.4.0"; 
 
     (function initVersion() {
         document.title = `画像一括トリミングツール (${APP_VERSION})`;
@@ -441,17 +441,15 @@
         toggleDownloadButtons(true);
     });
 
-    // ★ PDFダウンロード（横幅基準・縦比率自動追従ロジックに完全書き換え）
     pdfBtn.addEventListener('click', async () => {
         toggleDownloadButtons(false); const result = await generateFinalCanvas();
-        log.style.color = "#666"; log.textContent = "PDF横幅のスケールを固定中...";
+        log.style.color = "#666"; log.textContent = "PDF変換を実行中...";
         if (!window.jspdf || !window.jspdf.jsPDF) {
             log.style.color = "#e74c3c"; log.textContent = "エラー: ライブラリ未ロード。";
             toggleDownloadButtons(true); return;
         }
         const { jsPDF } = window.jspdf;
 
-        // 1. ユーザー指定の「横幅(pt)」を厳密に決定
         let basePtW;
         if (selectedPaperSize === 'a4') {
             basePtW = 595.28; 
@@ -462,7 +460,6 @@
         }
 
         if (selectedMode === 'score') {
-            // --- 縦に連結してPDF化 ---
             let pdfW, pdfH;
             if (selectedPaperSize === 'original') {
                 pdfW = cropArea.w * 0.75;
@@ -470,7 +467,7 @@
             } else {
                 pdfW = basePtW;
                 const totalCanvasH = cropArea.h * files.length;
-                pdfH = pdfW * (totalCanvasH / cropArea.w); // 横幅を基準に、アスペクト比から縦を自動決定
+                pdfH = pdfW * (totalCanvasH / cropArea.w); 
             }
 
             const pdf = new jsPDF('p', 'pt', [pdfW, pdfH]);
@@ -478,22 +475,19 @@
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
             pdf.save('combined_sheet_music.pdf');
         } else {
-            // --- 分割してPDF化（1:1.4の固定枠を完全廃止） ---
             let pageW, pageH;
             if (selectedPaperSize === 'original') {
                 pageW = cropArea.w * 0.75; 
                 pageH = cropArea.h * 0.75;
             } else {
                 pageW = basePtW; 
-                pageH = basePtW * (cropArea.y ? (cropArea.h / cropArea.w) : (cropArea.h / cropArea.w)); // 各ページも横幅固定・縦は画像比率で自動計算
+                pageH = basePtW * (cropArea.h / cropArea.w); 
             }
 
-            // 用紙サイズ自体を画像の比率にジャストフィットさせる
             const pdf = new jsPDF('p', 'pt', [pageW, pageH]);
             
             for (let i = 0; i < result.handoutData.length; i++) {
                 if (i > 0) pdf.addPage([pageW, pageH], 'p');
-                // ページサイズと画像サイズが100%完全に一致するため、0, 0に等倍配置するだけで余白はゼロ
                 pdf.addImage(result.handoutData[i], 'JPEG', 0, 0, pageW, pageH);
             }
             pdf.save('handout_material.pdf');
