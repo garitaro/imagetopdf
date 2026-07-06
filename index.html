@@ -22,7 +22,7 @@
         button.ratio-btn { flex: 1; min-width: 70px; padding: 8px 6px; background: white; color: #555; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; cursor: pointer; font-weight: bold; }
         button.ratio-btn.selected { background: #e67e22; color: white; border-color: #e67e22; }
         
-        /* 新設：用紙サイズボタンのスタイル */
+        /* 用紙サイズボタンのスタイル */
         button.paper-btn { flex: 1; min-width: 70px; padding: 8px 6px; background: white; color: #555; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; cursor: pointer; font-weight: bold; }
         button.paper-btn.selected { background: #2ecc71; color: white; border-color: #2ecc71; }
         
@@ -101,9 +101,9 @@
 
 <script>
     // ==========================================
-    // ★ バージョン設定
+    // ★ バージョン設定 (比率バグ完全修正)
     // ==========================================
-    const APP_VERSION = "v1.2.0"; 
+    const APP_VERSION = "v1.3.0"; 
 
     (function initVersion() {
         document.title = `画像一括トリミングツール (${APP_VERSION})`;
@@ -132,7 +132,6 @@
     const handoutBtn = document.getElementById('handout-btn');
     const scoreBtn = document.getElementById('score-btn');
     
-    // 用紙サイズ用の変数
     const paperButtons = document.querySelectorAll('.paper-btn');
     const customPaperInputs = document.getElementById('custom-paper-inputs');
     const paperW = document.getElementById('paper-w');
@@ -146,7 +145,7 @@
     let cropArea = null; 
     let selectedMode = 'score'; 
     let currentRatio = 'free'; 
-    let selectedPaperSize = 'original'; // デフォルト
+    let selectedPaperSize = 'original'; 
     let firstImageElement = null;
 
     let touchState = { mode: 'none', targetHandle: -1, startX: 0, startY: 0, initArea: null, currentX: 0, currentY: 0 };
@@ -213,7 +212,6 @@
         });
     });
 
-    // 用紙サイズボタン切り替え
     paperButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             paperButtons.forEach(b => b.classList.remove('selected'));
@@ -289,239 +287,4 @@
             const lX = centerX - loupeSize / 2; const lY = centerY - loupeSize / 2;
 
             ctx.save();
-            ctx.beginPath(); ctx.rect(lX, lY, loupeSize, loupeSize); ctx.clip();
-            ctx.fillStyle = "#ffffff"; ctx.fillRect(lX, lY, loupeSize, loupeSize);
-            
-            const srcSize = 32; 
-            ctx.drawImage(firstImageElement, centerX - srcSize/2, centerY - srcSize/2, srcSize, srcSize, lX, lY, loupeSize, loupeSize);
-
-            const scale = loupeSize / srcSize;
-            const rx = lX + loupeSize/2 + (cropArea.x - centerX) * scale;
-            const ry = lY + loupeSize/2 + (cropArea.y - centerY) * scale;
-            const rw = cropArea.w * scale; const rh = cropArea.h * scale;
-            
-            ctx.strokeStyle = "#ff3333"; ctx.lineWidth = 4;
-            ctx.strokeRect(rx, ry, rw, rh);
-            ctx.restore();
-
-            ctx.strokeStyle = "#007bff"; ctx.lineWidth = 3; ctx.strokeRect(lX, lY, loupeSize, loupeSize);
-            ctx.fillStyle = "#007bff"; ctx.fillRect(centerX - 3, centerY - 3, 6, 6);
-        }
-    }
-
-    function getTouchPos(canvas, e) {
-        var rect = canvas.getBoundingClientRect();
-        var scaleX = canvas.width / rect.width; var scaleY = canvas.height / rect.height;
-        var touch = e.touches[0];
-        return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY };
-    }
-
-    cropCanvas.addEventListener('touchstart', (e) => {
-        if (!firstImageElement || !cropArea) return;
-        const pos = getTouchPos(cropCanvas, e);
-        const touchThreshold = (cropCanvas.width / cropCanvas.offsetWidth) * 40;
-        const handles = getHandles(cropArea);
-        
-        let hitHandle = -1;
-        for (let i = 0; i < handles.length; i++) {
-            const dist = Math.hypot(pos.x - handles[i].x, pos.y - handles[i].y);
-            if (dist < touchThreshold) { hitHandle = i; break; }
-        }
-
-        touchState.startX = pos.x; touchState.startY = pos.y;
-        touchState.currentX = pos.x; touchState.currentY = pos.y;
-        touchState.initArea = { ...cropArea };
-
-        if (hitHandle !== -1) {
-            touchState.mode = 'resize'; touchState.targetHandle = hitHandle;
-        } else if (pos.x >= cropArea.x && pos.x <= cropArea.x + cropArea.w &&
-                   pos.y >= cropArea.y && pos.y <= cropArea.y + cropArea.h) {
-            touchState.mode = 'move';
-        } else {
-            touchState.mode = 'create';
-            touchState.initArea = { x: pos.x, y: pos.y, w: 0, h: 0 };
-            cropArea = { x: pos.x, y: pos.y, w: 10, h: 10 };
-        }
-        draw();
-        e.preventDefault();
-    }, {passive: false});
-
-    cropCanvas.addEventListener('touchmove', (e) => {
-        if (touchState.mode === 'none' || !firstImageElement) return;
-        const pos = getTouchPos(cropCanvas, e);
-        touchState.currentX = pos.x; touchState.currentY = pos.y;
-        
-        const dx = pos.x - touchState.startX; const dy = pos.y - touchState.startY;
-        const init = touchState.initArea; const ratio = getRatioValue();
-
-        if (touchState.mode === 'move') {
-            cropArea.x = Math.max(0, Math.min(cropCanvas.width - init.w, init.x + dx));
-            cropArea.y = Math.max(0, Math.min(cropCanvas.height - init.h, init.y + dy));
-        } 
-        else if (touchState.mode === 'create') {
-            let newW = pos.x - init.x;
-            let newH = currentRatio === 'free' ? (pos.y - init.y) : newW / ratio;
-            cropArea.x = newW >= 0 ? init.x : init.x + newW;
-            cropArea.y = newH >= 0 ? init.y : init.y + newH;
-            cropArea.w = Math.abs(newW); cropArea.h = Math.abs(newH);
-        } 
-        else if (touchState.mode === 'resize') {
-            let hIdx = touchState.targetHandle;
-            let left = init.x; let top = init.y; let right = init.x + init.w; let bottom = init.y + init.h;
-
-            if (hIdx === 0 || hIdx === 6 || hIdx === 7) left = Math.min(right - 20, init.x + dx);
-            if (hIdx === 2 || hIdx === 3 || hIdx === 4) right = Math.max(left + 20, init.x + init.w + dx);
-            if (hIdx === 0 || hIdx === 1 || hIdx === 2) top = Math.min(bottom - 20, init.y + dy);
-            if (hIdx === 4 || hIdx === 5 || hIdx === 6) bottom = Math.max(top + 20, init.y + init.h + dy);
-
-            let w = right - left; let h = bottom - top;
-
-            if (currentRatio !== 'free') {
-                if (hIdx === 3 || hIdx === 7) { 
-                    h = w / ratio; top = init.y - (h - init.h) / 2; bottom = top + h;
-                } else if (hIdx === 1 || hIdx === 5) { 
-                    w = h * ratio; left = init.x - (w - init.w) / 2; right = left + w;
-                } else {
-                    if (w / h > ratio) { h = w / ratio; } else { w = h * ratio; }
-                    if (hIdx === 0) { left = right - w; top = bottom - h; }   
-                    if (hIdx === 2) { right = left + w; top = bottom - h; }   
-                    if (hIdx === 4) { right = left + w; bottom = top + h; }   
-                    if (hIdx === 6) { left = right - w; bottom = top + h; }   
-                }
-            }
-
-            if (left >= 0 && right <= cropCanvas.width && top >= 0 && bottom <= cropCanvas.height) {
-                cropArea = { x: Math.round(left), y: Math.round(top), w: Math.round(right - left), h: Math.round(bottom - top) };
-            }
-        }
-        draw();
-        e.preventDefault();
-    }, {passive: false});
-
-    cropCanvas.addEventListener('touchend', (e) => {
-        touchState.mode = 'none'; draw(); 
-        log.style.color = "#2ecc71";
-        log.textContent = `範囲確定（横:${cropArea.w}px, 縦:${cropArea.h}px）。保存形式を選んでダウンロードしてください。`;
-    }, {passive: false});
-
-    // 加工コアロジック
-    async function generateFinalCanvas() {
-        log.style.color = "#666"; log.textContent = "指定された範囲だけで新しい画像を1から合成しています...";
-        const workCanvas = document.createElement('canvas'); workCanvas.width = cropArea.w; workCanvas.height = cropArea.h;
-        const workCtx = workCanvas.getContext('2d');
-        const finalCanvas = document.createElement('canvas'); finalCanvas.width = cropArea.w;
-        finalCanvas.height = selectedMode === 'score' ? cropArea.h * files.length : cropArea.h;
-        const finalCtx = finalCanvas.getContext('2d');
-        let currentY = 0; let imagesDataArray = [];
-
-        for (let i = 0; i < files.length; i++) {
-            await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        workCtx.clearRect(0, 0, cropArea.w, cropArea.h);
-                        workCtx.drawImage(img, cropArea.x, cropArea.y, cropArea.w, cropArea.h, 0, 0, cropArea.w, cropArea.h);
-                        if (selectedMode === 'score') {
-                            finalCtx.drawImage(workCanvas, 0, currentY); currentY += cropArea.h;
-                        } else { imagesDataArray.push(workCanvas.toDataURL('image/jpeg', 0.9)); }
-                        log.textContent = `画像加工中: ${i + 1} / ${files.length} 枚目...`;
-                        resolve();
-                    };
-                    img.src = event.target.result;
-                };
-                reader.readAsDataURL(files[i]);
-            });
-        }
-        return { canvas: finalCanvas, handoutData: imagesDataArray };
-    }
-
-    jpgBtn.addEventListener('click', async () => {
-        toggleDownloadButtons(false); const result = await generateFinalCanvas();
-        const link = document.createElement('a'); link.download = 'combined_sheet_music.jpg';
-        link.href = result.canvas.toDataURL('image/jpeg', 0.92); link.click();
-        log.style.color = "#2ecc71"; log.textContent = "✅ 完全余白なしJPG画像の保存に成功しました！";
-        toggleDownloadButtons(true);
-    });
-
-    // PDFダウンロード（新設のサイズコントロールロジック内蔵）
-    pdfBtn.addEventListener('click', async () => {
-        toggleDownloadButtons(false); const result = await generateFinalCanvas();
-        log.style.color = "#666"; log.textContent = "PDF規格にサイズ変換中...";
-        if (!window.jspdf || !window.jspdf.jsPDF) {
-            log.style.color = "#e74c3c"; log.textContent = "エラー: ライブラリ未ロード。";
-            toggleDownloadButtons(true); return;
-        }
-        const { jsPDF } = window.jspdf;
-
-        // 基準となる横幅(pt単位)の定義
-        let basePtW;
-        if (selectedPaperSize === 'a4') {
-            basePtW = 595.28; // A4縦の幅
-        } else if (selectedPaperSize === 'b5') {
-            basePtW = 515.91; // JIS規格B5縦の幅
-        } else if (selectedPaperSize === 'custom') {
-            basePtW = parseFloat(paperW.value) || 595;
-        }
-
-        if (selectedMode === 'score') {
-            // --- 縦に連結してPDF化 ---
-            let pdfW, pdfH;
-            if (selectedPaperSize === 'original') {
-                pdfW = cropArea.w * 0.75;
-                pdfH = (cropArea.h * files.length) * 0.75;
-            } else {
-                // 規格に合わせた幅に固定し、縦はアスペクト比を完全維持して拡大縮小
-                pdfW = basePtW;
-                const totalCanvasH = cropArea.h * files.length;
-                pdfH = pdfW * (totalCanvasH / cropArea.w);
-            }
-
-            const pdf = new jsPDF('p', 'pt', [pdfW, pdfH]);
-            const imgData = result.canvas.toDataURL('image/jpeg', 0.9);
-            pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
-            pdf.save('combined_sheet_music.pdf');
-        } else {
-            // --- 分割してPDF化 ---
-            let pageW, pageH, orientation;
-            orientation = cropArea.w >= cropArea.h ? 'l' : 'p';
-
-            if (selectedPaperSize === 'original') {
-                pageW = cropArea.w * 0.75; pageH = cropArea.h * 0.75;
-            } else {
-                let longSide, shortSide;
-                if (selectedPaperSize === 'a4') {
-                    longSide = 841.89; shortSide = 595.28;
-                } else if (selectedPaperSize === 'b5') {
-                    longSide = 728.50; shortSide = 515.91;
-                } else {
-                    shortSide = basePtW;
-                    longSide = basePtW * (Math.max(cropArea.w, cropArea.h) / Math.min(cropArea.w, cropArea.h));
-                }
-                pageW = orientation === 'l' ? longSide : shortSide;
-                pageH = orientation === 'l' ? shortSide : longSide;
-            }
-
-            const pdf = new jsPDF(orientation, 'pt', [pageW, pageH]);
-            
-            for (let i = 0; i < result.handoutData.length; i++) {
-                if (i > 0) pdf.addPage([pageW, pageH], orientation);
-                
-                // 画像を用紙規格の枠内にアスペクト比維持で最大化して配置
-                const imgW = cropArea.w; const imgH = cropArea.h;
-                const ratioX = pageW / imgW; const ratioY = pageH / imgH;
-                const renderRatio = Math.min(ratioX, ratioY);
-                
-                const renderW = imgW * renderRatio; const renderH = imgH * renderRatio;
-                const xOffset = (pageW - renderW) / 2; const yOffset = (pageH - renderH) / 2;
-
-                pdf.addImage(result.handoutData[i], 'JPEG', xOffset, yOffset, renderW, renderH);
-            }
-            pdf.save('handout_material.pdf');
-        }
-        log.style.color = "#2ecc71"; log.textContent = "✅ リサイズ対応PDFファイルの保存に成功しました！";
-        toggleDownloadButtons(true);
-    });
-</script>
-</body>
-</html>
+            ctx.beginPath(); ctx.rect(lX, lY, loupeSize, loupeSize); ctx.
