@@ -16,14 +16,19 @@
         
         /* 比率・設定セクション */
         .config-section { text-align: center; margin-top: 10px; display: none; background: #f9f9f9; padding: 10px; border-radius: 5px; }
-        .config-title { font-size: 0.85rem; color: #555; margin: 0 0 8px 0; font-weight: bold; }
+        .config-title { font-size: 0.85rem; color: #555; margin: 12px 0 8px 0; font-weight: bold; }
+        .config-title:first-child { margin-top: 0; }
         .ratio-buttons { display: flex; justify-content: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
         button.ratio-btn { flex: 1; min-width: 70px; padding: 8px 6px; background: white; color: #555; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; cursor: pointer; font-weight: bold; }
         button.ratio-btn.selected { background: #e67e22; color: white; border-color: #e67e22; }
         
+        /* 新設：用紙サイズボタンのスタイル */
+        button.paper-btn { flex: 1; min-width: 70px; padding: 8px 6px; background: white; color: #555; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; cursor: pointer; font-weight: bold; }
+        button.paper-btn.selected { background: #2ecc71; color: white; border-color: #2ecc71; }
+        
         /* 自由入力欄のスタイル */
         .custom-ratio-container { display: none; margin-top: 8px; margin-bottom: 12px; align-items: center; justify-content: center; gap: 5px; font-size: 0.9rem; color: #333; }
-        .custom-ratio-container input { width: 60px; padding: 5px; text-align: center; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; font-weight: bold; }
+        .custom-ratio-container input { width: 70px; padding: 5px; text-align: center; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; font-weight: bold; }
 
         .mode-buttons { display: flex; justify-content: center; gap: 10px; margin-top: 5px; }
         button.choice { flex: 1; padding: 10px; background: white; color: #007bff; border: 2px solid #007bff; border-radius: 5px; font-size: 0.9rem; font-weight: bold; cursor: pointer; }
@@ -69,10 +74,22 @@
                 <button class="choice" id="handout-btn">分割してPDF化</button>
                 <button class="choice" id="score-btn">縦に連結してPDF化</button>
             </div>
+
+            <p class="config-title">3. 出力PDFの用紙サイズ（Goodnotes等の書き込みスケール対策）</p>
+            <div class="ratio-buttons">
+                <button class="paper-btn selected" data-paper="original">元のサイズ</button>
+                <button class="paper-btn" data-paper="a4">A4</button>
+                <button class="paper-btn" data-paper="b5">B5</button>
+                <button class="paper-btn" data-paper="custom">自由指定枠</button>
+            </div>
+            <div class="custom-ratio-container" id="custom-paper-inputs">
+                <span>指定横幅 (pt)：</span>
+                <input type="number" id="paper-w" value="595" min="100" step="5">
+            </div>
         </div>
 
         <div class="output-section" id="output-section">
-            <p class="config-title">3. 保存する形式を押してダウンロード</p>
+            <p class="config-title">4. 保存する形式を押してダウンロード</p>
             <div class="output-buttons">
                 <button class="download-btn" id="jpg-btn">JPG画像で保存</button>
                 <button class="download-btn" id="pdf-btn">PDFファイルで保存</button>
@@ -84,17 +101,14 @@
 
 <script>
     // ==========================================
-    // ★ バージョン設定（ここを変更するだけで反映されます）
+    // ★ バージョン設定
     // ==========================================
-    const APP_VERSION = "v0.3"; 
+    const APP_VERSION = "v1.2.0"; 
 
-    // 起動時の初期化処理
     (function initVersion() {
         document.title = `画像一括トリミングツール (${APP_VERSION})`;
         const displayEl = document.getElementById('version-display');
-        if (displayEl) {
-            displayEl.textContent = `(${APP_VERSION})`; // 仕様テキストを削除してバージョンのみを表示
-        }
+        if (displayEl) displayEl.textContent = `(${APP_VERSION})`;
     })();
 
     window.onerror = function(msg, url, line) {
@@ -117,6 +131,12 @@
 
     const handoutBtn = document.getElementById('handout-btn');
     const scoreBtn = document.getElementById('score-btn');
+    
+    // 用紙サイズ用の変数
+    const paperButtons = document.querySelectorAll('.paper-btn');
+    const customPaperInputs = document.getElementById('custom-paper-inputs');
+    const paperW = document.getElementById('paper-w');
+
     const outputSection = document.getElementById('output-section');
     const jpgBtn = document.getElementById('jpg-btn');
     const pdfBtn = document.getElementById('pdf-btn');
@@ -126,19 +146,13 @@
     let cropArea = null; 
     let selectedMode = 'score'; 
     let currentRatio = 'free'; 
+    let selectedPaperSize = 'original'; // デフォルト
     let firstImageElement = null;
 
-    let touchState = {
-        mode: 'none', 
-        targetHandle: -1, 
-        startX: 0, startY: 0,
-        initArea: null,
-        currentX: 0, currentY: 0
-    };
+    let touchState = { mode: 'none', targetHandle: -1, startX: 0, startY: 0, initArea: null, currentX: 0, currentY: 0 };
 
     function toggleDownloadButtons(enable) {
-        jpgBtn.disabled = !enable;
-        pdfBtn.disabled = !enable;
+        jpgBtn.disabled = !enable; pdfBtn.disabled = !enable;
     }
 
     function getRatioValue() {
@@ -180,10 +194,8 @@
                 log.style.color = "#666"; log.style.background = "#f9f9f9";
                 log.textContent = `トリミング範囲を微調整して、下の保存形式を選んでください。`;
                 
-                scoreBtn.classList.add('selected');
-                handoutBtn.classList.remove('selected');
-                jpgBtn.style.display = 'block';
-                toggleDownloadButtons(true);
+                scoreBtn.classList.add('selected'); handoutBtn.classList.remove('selected');
+                jpgBtn.style.display = 'block'; toggleDownloadButtons(true);
                 draw();
             };
             firstImageElement.src = event.target.result;
@@ -198,6 +210,16 @@
             currentRatio = btn.getAttribute('data-ratio');
             customRatioInputs.style.display = currentRatio === 'custom' ? 'flex' : 'none';
             applyRatioConstraint();
+        });
+    });
+
+    // 用紙サイズボタン切り替え
+    paperButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            paperButtons.forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            selectedPaperSize = btn.getAttribute('data-paper');
+            customPaperInputs.style.display = selectedPaperSize === 'custom' ? 'flex' : 'none';
         });
     });
 
@@ -227,14 +249,8 @@
     function getHandles(area) {
         const x = area.x; const y = area.y; const w = area.w; const h = area.h;
         return [
-            { x: x, y: y },          
-            { x: x + w/2, y: y },    
-            { x: x + w, y: y },      
-            { x: x + w, y: y + h/2 },
-            { x: x + w, y: y + h },  
-            { x: x + w/2, y: y + h },
-            { x: x, y: y + h },      
-            { x: x, y: y + h/2 }     
+            { x: x, y: y }, { x: x + w/2, y: y }, { x: x + w, y: y }, { x: x + w, y: y + h/2 },
+            { x: x + w, y: y + h }, { x: x + w/2, y: y + h }, { x: x, y: y + h }, { x: x, y: y + h/2 }     
         ];
     }
 
@@ -245,7 +261,7 @@
 
         ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
         ctx.fillRect(0, 0, cropCanvas.width, cropArea.y); 
-        ctx.fillRect(0, cropArea.y + cropArea.h, cropCanvas.width, canvasContainer.offsetHeight); 
+        ctx.fillRect(0, cropArea.y + cropArea.h, cropCanvas.width, cropCanvas.height - (cropArea.y + cropArea.h)); 
         ctx.fillRect(0, cropArea.y, cropArea.x, cropArea.h); 
         ctx.fillRect(cropArea.x + cropArea.w, cropArea.y, cropCanvas.width - (cropArea.x + cropArea.w), cropArea.h); 
 
@@ -385,9 +401,10 @@
     cropCanvas.addEventListener('touchend', (e) => {
         touchState.mode = 'none'; draw(); 
         log.style.color = "#2ecc71";
-        log.textContent = `範囲確定（横:${cropArea.w}px, 縦:${cropArea.h}px）。保存する形式を押してください。`;
+        log.textContent = `範囲確定（横:${cropArea.w}px, 縦:${cropArea.h}px）。保存形式を選んでダウンロードしてください。`;
     }, {passive: false});
 
+    // 加工コアロジック
     async function generateFinalCanvas() {
         log.style.color = "#666"; log.textContent = "指定された範囲だけで新しい画像を1から合成しています...";
         const workCanvas = document.createElement('canvas'); workCanvas.width = cropArea.w; workCanvas.height = cropArea.h;
@@ -427,29 +444,82 @@
         toggleDownloadButtons(true);
     });
 
+    // PDFダウンロード（新設のサイズコントロールロジック内蔵）
     pdfBtn.addEventListener('click', async () => {
         toggleDownloadButtons(false); const result = await generateFinalCanvas();
-        log.style.color = "#666"; log.textContent = "PDF変換を実行中...";
+        log.style.color = "#666"; log.textContent = "PDF規格にサイズ変換中...";
         if (!window.jspdf || !window.jspdf.jsPDF) {
             log.style.color = "#e74c3c"; log.textContent = "エラー: ライブラリ未ロード。";
             toggleDownloadButtons(true); return;
         }
         const { jsPDF } = window.jspdf;
-        const ptW = cropArea.w * 0.75; const ptH = cropArea.h * 0.75;
+
+        // 基準となる横幅(pt単位)の定義
+        let basePtW;
+        if (selectedPaperSize === 'a4') {
+            basePtW = 595.28; // A4縦の幅
+        } else if (selectedPaperSize === 'b5') {
+            basePtW = 515.91; // JIS規格B5縦の幅
+        } else if (selectedPaperSize === 'custom') {
+            basePtW = parseFloat(paperW.value) || 595;
+        }
 
         if (selectedMode === 'score') {
-            const totalPtH = ptH * files.length; const pdf = new jsPDF('p', 'pt', [ptW, totalPtH]);
+            // --- 縦に連結してPDF化 ---
+            let pdfW, pdfH;
+            if (selectedPaperSize === 'original') {
+                pdfW = cropArea.w * 0.75;
+                pdfH = (cropArea.h * files.length) * 0.75;
+            } else {
+                // 規格に合わせた幅に固定し、縦はアスペクト比を完全維持して拡大縮小
+                pdfW = basePtW;
+                const totalCanvasH = cropArea.h * files.length;
+                pdfH = pdfW * (totalCanvasH / cropArea.w);
+            }
+
+            const pdf = new jsPDF('p', 'pt', [pdfW, pdfH]);
             const imgData = result.canvas.toDataURL('image/jpeg', 0.9);
-            pdf.addImage(imgData, 'JPEG', 0, 0, ptW, totalPtH); pdf.save('combined_sheet_music.pdf');
+            pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
+            pdf.save('combined_sheet_music.pdf');
         } else {
-            const orientation = cropArea.w >= cropArea.h ? 'l' : 'p'; const pdf = new jsPDF(orientation, 'pt', [ptW, ptH]);
+            // --- 分割してPDF化 ---
+            let pageW, pageH, orientation;
+            orientation = cropArea.w >= cropArea.h ? 'l' : 'p';
+
+            if (selectedPaperSize === 'original') {
+                pageW = cropArea.w * 0.75; pageH = cropArea.h * 0.75;
+            } else {
+                let longSide, shortSide;
+                if (selectedPaperSize === 'a4') {
+                    longSide = 841.89; shortSide = 595.28;
+                } else if (selectedPaperSize === 'b5') {
+                    longSide = 728.50; shortSide = 515.91;
+                } else {
+                    shortSide = basePtW;
+                    longSide = basePtW * (Math.max(cropArea.w, cropArea.h) / Math.min(cropArea.w, cropArea.h));
+                }
+                pageW = orientation === 'l' ? longSide : shortSide;
+                pageH = orientation === 'l' ? shortSide : longSide;
+            }
+
+            const pdf = new jsPDF(orientation, 'pt', [pageW, pageH]);
+            
             for (let i = 0; i < result.handoutData.length; i++) {
-                if (i > 0) pdf.addPage([ptW, ptH], orientation);
-                pdf.addImage(result.handoutData[i], 'JPEG', 0, 0, ptW, ptH);
+                if (i > 0) pdf.addPage([pageW, pageH], orientation);
+                
+                // 画像を用紙規格の枠内にアスペクト比維持で最大化して配置
+                const imgW = cropArea.w; const imgH = cropArea.h;
+                const ratioX = pageW / imgW; const ratioY = pageH / imgH;
+                const renderRatio = Math.min(ratioX, ratioY);
+                
+                const renderW = imgW * renderRatio; const renderH = imgH * renderRatio;
+                const xOffset = (pageW - renderW) / 2; const yOffset = (pageH - renderH) / 2;
+
+                pdf.addImage(result.handoutData[i], 'JPEG', xOffset, yOffset, renderW, renderH);
             }
             pdf.save('handout_material.pdf');
         }
-        log.style.color = "#2ecc71"; log.textContent = "✅ 完全余白なしPDFファイルの保存に成功しました！";
+        log.style.color = "#2ecc71"; log.textContent = "✅ リサイズ対応PDFファイルの保存に成功しました！";
         toggleDownloadButtons(true);
     });
 </script>
