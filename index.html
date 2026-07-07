@@ -12,7 +12,7 @@
         input[type="file"] { display: block; margin: 15px auto; width: 100%; }
         
         #canvas-container { position: relative; width: 100%; border: 2px solid #ccc; overflow: hidden; display: none; margin-top: 10px; }
-        canvas { width: 100%; display: block; background: #fff; }
+        canvas { width: 100%; display: block; background: #fff; cursor: crosshair; }
         
         /* 比率・設定セクション */
         .config-section { text-align: center; margin-top: 10px; display: none; background: #f9f9f9; padding: 10px; border-radius: 5px; }
@@ -29,6 +29,21 @@
         /* 自由入力欄のスタイル */
         .custom-ratio-container { display: none; margin-top: 8px; margin-bottom: 12px; align-items: center; justify-content: center; gap: 5px; font-size: 0.9rem; color: #333; }
         .custom-ratio-container input { width: 70px; padding: 5px; text-align: center; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; font-weight: bold; }
+
+        /* 微調整セクションのスタイル */
+        .nudge-section { display: none; text-align: center; margin-top: 10px; background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+        .nudge-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 5px; }
+        .nudge-group { background: #f3f3f3; padding: 6px 10px; border-radius: 4px; border: 1px solid #e0e0e0; font-size: 0.85rem; font-weight: bold; color: #333; display: flex; align-items: center; gap: 4px; }
+        .nudge-btn { padding: 4px 10px; font-size: 0.85rem; font-weight: bold; cursor: pointer; background: white; border: 1px solid #ccc; border-radius: 3px; }
+        .nudge-btn:active { background: #e0e0e0; }
+
+        /* 常時表示チェックボックスのスタイル */
+        .checkbox-container { margin: 8px 0 6px 0; font-size: 0.9rem; font-weight: bold; color: #444; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; }
+        .checkbox-container input { width: 17px; height: 16px; cursor: pointer; }
+
+        /* 新設：ファイル名入力欄のスタイル */
+        .filename-container { margin: 10px auto; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.9rem; font-weight: bold; color: #333; }
+        .filename-container input { width: 220px; padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; font-weight: bold; text-align: left; }
 
         .mode-buttons { display: flex; justify-content: center; gap: 10px; margin-top: 5px; }
         button.choice { flex: 1; padding: 10px; background: white; color: #007bff; border: 2px solid #007bff; border-radius: 5px; font-size: 0.9rem; font-weight: bold; cursor: pointer; }
@@ -52,6 +67,22 @@
 
         <div id="canvas-container">
             <canvas id="crop-canvas"></canvas>
+        </div>
+        
+        <div class="nudge-section" id="nudge-section">
+            <p class="config-title" style="margin:0 0 5px 0; color:#e67e22;">辺の微調整 (1ピクセル単位で精密に押し引きできます)</p>
+            
+            <label class="checkbox-container">
+                <input type="checkbox" id="keep-loupe-checkbox">
+                <span>ルーペを常時表示する (1pxボタン自動連動)</span>
+            </label>
+
+            <div class="nudge-container">
+                <div class="nudge-group">左辺：<button class="nudge-btn" id="nudge-l-dec">◀</button><button class="nudge-btn" id="nudge-l-inc">▶</button></div>
+                <div class="nudge-group">右辺：<button class="nudge-btn" id="nudge-r-dec">◀</button><button class="nudge-btn" id="nudge-r-inc">▶</button></div>
+                <div class="nudge-group">上辺：<button class="nudge-btn" id="nudge-t-dec">▲</button><button class="nudge-btn" id="nudge-t-inc">▼</button></div>
+                <div class="nudge-group">下辺：<button class="nudge-btn" id="nudge-b-dec">▲</button><button class="nudge-btn" id="nudge-b-inc">▼</button></div>
+            </div>
         </div>
         
         <div class="config-section" id="config-section">
@@ -89,6 +120,11 @@
         </div>
 
         <div class="output-section" id="output-section">
+            <div class="filename-container">
+                <span>保存ファイル名：</span>
+                <input type="text" id="output-filename" placeholder="名前を入力（空欄ならデフォルト）">
+            </div>
+
             <p class="config-title">4. 保存する形式を押してダウンロード</p>
             <div class="output-buttons">
                 <button class="download-btn" id="jpg-btn">JPG画像で保存</button>
@@ -103,7 +139,7 @@
     // ==========================================
     // ★ バージョン設定
     // ==========================================
-    const APP_VERSION = "v1.5.0"; 
+    const APP_VERSION = "v1.9.0"; 
 
     (function initVersion() {
         document.title = `画像一括トリミングツール (${APP_VERSION})`;
@@ -136,6 +172,9 @@
     const customPaperInputs = document.getElementById('custom-paper-inputs');
     const paperW = document.getElementById('paper-w');
 
+    // ファイル名入力欄の要素取得
+    const filenameInput = document.getElementById('output-filename');
+
     const outputSection = document.getElementById('output-section');
     const jpgBtn = document.getElementById('jpg-btn');
     const pdfBtn = document.getElementById('pdf-btn');
@@ -147,6 +186,8 @@
     let currentRatio = 'free'; 
     let selectedPaperSize = 'original'; 
     let firstImageElement = null;
+
+    let lastActiveHandle = 1; 
 
     let touchState = { mode: 'none', targetHandle: -1, startX: 0, startY: 0, initArea: null, currentX: 0, currentY: 0 };
 
@@ -165,6 +206,23 @@
         return null;
     }
 
+// 入力内容から最終的なファイル名を生成する関数（日付自動スタンプ対応）
+    function getFinalFilename(extension) {
+        const userInput = filenameInput.value.trim();
+        if (userInput) return `${userInput}.${extension}`;
+        
+        // 今日の日付 (YYYYMMDD) を自動取得するロジック
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0'); // 月は0から始まるため+1
+        const dd = String(now.getDate()).padStart(2, '0');
+        const dateStr = `${yyyy}${mm}${dd}`; // 例: "20260708"
+        
+        // 未入力時は日付付きの汎用名を出力
+        return selectedMode === 'score' 
+            ? `combined_output_${dateStr}.${extension}` 
+            : `split_output_${dateStr}.${extension}`;
+    }
     filesInput.addEventListener('change', (e) => {
         files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
         if (files.length === 0) return;
@@ -187,6 +245,7 @@
                 cropArea = { x, y, w, h };
 
                 canvasContainer.style.display = 'block';
+                document.getElementById('nudge-section').style.display = 'block';
                 configSection.style.display = 'block';
                 outputSection.style.display = 'block';
                 
@@ -221,6 +280,8 @@
         });
     });
 
+    document.getElementById('keep-loupe-checkbox').addEventListener('change', draw);
+
     [ratioW, ratioH].forEach(input => { input.addEventListener('input', applyRatioConstraint); });
 
     function applyRatioConstraint() {
@@ -252,7 +313,6 @@
         ];
     }
 
-    // 描画エンジン（インライン・ハンドルレンズ内蔵）
     function draw() {
         if (!firstImageElement || !cropArea) return;
         ctx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
@@ -273,18 +333,29 @@
 
         handles.forEach((h, idx) => {
             if (touchState.mode === 'resize' && touchState.targetHandle === idx) return;
+            if (touchState.mode === 'none' && keepLoupeEnabled() && lastActiveHandle === idx) return;
             ctx.fillRect(h.x - hSize/2, h.y - hSize/2, hSize, hSize);
             ctx.strokeRect(h.x - hSize/2, h.y - hSize/2, hSize, hSize);
         });
 
+        let showLoupe = false;
+        let targetIdx = -1;
+        let centerX, centerY;
+
         if (touchState.mode !== 'none' && (touchState.mode === 'resize' || touchState.mode === 'create')) {
-            const loupeSize = Math.max(110, cropCanvas.width * 0.25);
-            let centerX, centerY;
+            showLoupe = true; targetIdx = touchState.targetHandle;
             if (touchState.mode === 'resize') {
                 centerX = handles[touchState.targetHandle].x; centerY = handles[touchState.targetHandle].y;
             } else {
                 centerX = touchState.currentX; centerY = touchState.currentY;
             }
+        } else if (touchState.mode === 'none' && keepLoupeEnabled() && lastActiveHandle !== -1) {
+            showLoupe = true; targetIdx = lastActiveHandle;
+            centerX = handles[targetIdx].x; centerY = handles[targetIdx].y;
+        }
+
+        if (showLoupe) {
+            const loupeSize = Math.max(110, cropCanvas.width * 0.25);
             const lX = centerX - loupeSize / 2; const lY = centerY - loupeSize / 2;
 
             ctx.save();
@@ -308,49 +379,41 @@
         }
     }
 
-    function getTouchPos(canvas, e) {
-        var rect = canvas.getBoundingClientRect();
-        var scaleX = canvas.width / rect.width; var scaleY = canvas.height / rect.height;
-        var touch = e.touches[0];
-        return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY };
-    }
+    function keepLoupeEnabled() { return document.getElementById('keep-loupe-checkbox').checked; }
 
-    cropCanvas.addEventListener('touchstart', (e) => {
+    function handleStart(posX, posY) {
         if (!firstImageElement || !cropArea) return;
-        const pos = getTouchPos(cropCanvas, e);
         const touchThreshold = (cropCanvas.width / cropCanvas.offsetWidth) * 40;
         const handles = getHandles(cropArea);
         
         let hitHandle = -1;
         for (let i = 0; i < handles.length; i++) {
-            const dist = Math.hypot(pos.x - handles[i].x, pos.y - handles[i].y);
+            const dist = Math.hypot(posX - handles[i].x, posY - handles[i].y);
             if (dist < touchThreshold) { hitHandle = i; break; }
         }
 
-        touchState.startX = pos.x; touchState.startY = pos.y;
-        touchState.currentX = pos.x; touchState.currentY = pos.y;
+        touchState.startX = posX; touchState.startY = posY;
+        touchState.currentX = posX; touchState.currentY = posY;
         touchState.initArea = { ...cropArea };
 
         if (hitHandle !== -1) {
-            touchState.mode = 'resize'; touchState.targetHandle = hitHandle;
-        } else if (pos.x >= cropArea.x && pos.x <= cropArea.x + cropArea.w &&
-                   pos.y >= cropArea.y && pos.y <= cropArea.y + cropArea.h) {
+            touchState.mode = 'resize'; touchState.targetHandle = hitHandle; lastActiveHandle = hitHandle;
+        } else if (posX >= cropArea.x && posX <= cropArea.x + cropArea.w &&
+                   posY >= cropArea.y && posY <= cropArea.y + cropArea.h) {
             touchState.mode = 'move';
         } else {
             touchState.mode = 'create';
-            touchState.initArea = { x: pos.x, y: pos.y, w: 0, h: 0 };
-            cropArea = { x: pos.x, y: pos.y, w: 10, h: 10 };
+            touchState.initArea = { x: posX, y: posY, w: 0, h: 0 };
+            cropArea = { x: posX, y: posY, w: 10, h: 10 };
         }
         draw();
-        e.preventDefault();
-    }, {passive: false});
+    }
 
-    cropCanvas.addEventListener('touchmove', (e) => {
+    function handleMove(posX, posY) {
         if (touchState.mode === 'none' || !firstImageElement) return;
-        const pos = getTouchPos(cropCanvas, e);
-        touchState.currentX = pos.x; touchState.currentY = pos.y;
+        touchState.currentX = posX; touchState.currentY = posY;
         
-        const dx = pos.x - touchState.startX; const dy = pos.y - touchState.startY;
+        const dx = posX - touchState.startX; const dy = posY - touchState.startY;
         const init = touchState.initArea; const ratio = getRatioValue();
 
         if (touchState.mode === 'move') {
@@ -358,8 +421,8 @@
             cropArea.y = Math.max(0, Math.min(cropCanvas.height - init.h, init.y + dy));
         } 
         else if (touchState.mode === 'create') {
-            let newW = pos.x - init.x;
-            let newH = currentRatio === 'free' ? (pos.y - init.y) : newW / ratio;
+            let newW = posX - init.x;
+            let newH = currentRatio === 'free' ? (posY - init.y) : newW / ratio;
             cropArea.x = newW >= 0 ? init.x : init.x + newW;
             cropArea.y = newH >= 0 ? init.y : init.y + newH;
             cropArea.w = Math.abs(newW); cropArea.h = Math.abs(newH);
@@ -394,14 +457,87 @@
             }
         }
         draw();
-        e.preventDefault();
-    }, {passive: false});
+    }
 
-    cropCanvas.addEventListener('touchend', (e) => {
+    function handleEnd() {
+        if (touchState.mode === 'none') return;
         touchState.mode = 'none'; draw(); 
         log.style.color = "#2ecc71";
         log.textContent = `範囲確定（横:${cropArea.w}px, 縦:${cropArea.h}px）。保存形式を選んでダウンロードしてください。`;
+    }
+
+    function getTouchPos(canvas, e) {
+        var rect = canvas.getBoundingClientRect();
+        var scaleX = canvas.width / rect.width; var scaleY = canvas.height / rect.height;
+        var touch = e.touches[0];
+        return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY };
+    }
+
+    cropCanvas.addEventListener('touchstart', (e) => {
+        const pos = getTouchPos(cropCanvas, e); handleStart(pos.x, pos.y); e.preventDefault();
     }, {passive: false});
+
+    cropCanvas.addEventListener('touchmove', (e) => {
+        const pos = getTouchPos(cropCanvas, e); handleMove(pos.x, pos.y); e.preventDefault();
+    }, {passive: false});
+
+    cropCanvas.addEventListener('touchend', (e) => {
+        handleEnd(); e.preventDefault();
+    }, {passive: false});
+
+    function getMousePos(canvas, e) {
+        var rect = canvas.getBoundingClientRect();
+        return {
+            x: (e.clientX - rect.left) * (canvas.width / rect.width),
+            y: (e.clientY - rect.top) * (canvas.height / rect.height)
+        };
+    }
+
+    cropCanvas.addEventListener('mousedown', (e) => {
+        const pos = getMousePos(cropCanvas, e); handleStart(pos.x, pos.y);
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (touchState.mode === 'none') return;
+        const pos = getMousePos(cropCanvas, e); handleMove(pos.x, pos.y);
+    });
+
+    window.addEventListener('mouseup', () => { handleEnd(); });
+
+    function nudge(edge, delta) {
+        if (!cropArea || !firstImageElement) return;
+        
+        if (edge === 'left') {
+            if (delta < 0 && cropArea.x > 0) { cropArea.x--; cropArea.w++; }
+            if (delta > 0 && cropArea.w > 5) { cropArea.x++; cropArea.w--; }
+            lastActiveHandle = 7;
+        } else if (edge === 'right') {
+            if (delta < 0 && cropArea.w > 5) { cropArea.w--; }
+            if (delta > 0 && cropArea.x + cropArea.w < cropCanvas.width) { cropArea.w++; }
+            lastActiveHandle = 3;
+        } else if (edge === 'top') {
+            if (delta < 0 && cropArea.y > 0) { cropArea.y--; cropArea.h++; }
+            if (delta > 0 && cropArea.h > 5) { cropArea.y++; cropArea.h--; }
+            lastActiveHandle = 1;
+        } else if (edge === 'bottom') {
+            if (delta < 0 && cropArea.h > 5) { cropArea.h--; }
+            if (delta > 0 && cropArea.y + cropArea.h < cropCanvas.height) { cropArea.h++; }
+            lastActiveHandle = 5;
+        }
+        
+        if (currentRatio !== 'free') { applyRatioConstraint(); }
+        draw();
+        log.style.color = "#e67e22"; log.textContent = `微調整適用：範囲確定（横:${cropArea.w}px, 縦:${cropArea.h}px）。`;
+    }
+
+    document.getElementById('nudge-l-dec').addEventListener('click', () => nudge('left', -1));
+    document.getElementById('nudge-l-inc').addEventListener('click', () => nudge('left', 1));
+    document.getElementById('nudge-r-dec').addEventListener('click', () => nudge('right', -1));
+    document.getElementById('nudge-r-inc').addEventListener('click', () => nudge('right', 1));
+    document.getElementById('nudge-t-dec').addEventListener('click', () => nudge('top', -1));
+    document.getElementById('nudge-t-inc').addEventListener('click', () => nudge('top', 1));
+    document.getElementById('nudge-b-dec').addEventListener('click', () => nudge('bottom', -1));
+    document.getElementById('nudge-b-inc').addEventListener('click', () => nudge('bottom', 1));
 
     async function generateFinalCanvas() {
         log.style.color = "#666"; log.textContent = "指定された範囲だけで新しい画像を1から合成しています...";
@@ -436,9 +572,10 @@
 
     jpgBtn.addEventListener('click', async () => {
         toggleDownloadButtons(false); const result = await generateFinalCanvas();
-        const link = document.createElement('a'); link.download = 'combined_sheet_music.jpg';
+        const link = document.createElement('a'); 
+        link.download = getFinalFilename('jpg'); // ファイル名指定に対応
         link.href = result.canvas.toDataURL('image/jpeg', 0.92); link.click();
-        log.style.color = "#2ecc71"; log.textContent = "✅ 完全余白なしJPG画像の保存に成功しました！";
+        log.style.color = "#2ecc71"; log.textContent = "✅ JPG画像の保存に成功しました！";
         toggleDownloadButtons(true);
     });
 
@@ -452,42 +589,28 @@
         const { jsPDF } = window.jspdf;
 
         let basePtW;
-        if (selectedPaperSize === 'a4') {
-            basePtW = 595.28; 
-        } else if (selectedPaperSize === 'b5') {
-            basePtW = 515.91; 
-        } else if (selectedPaperSize === 'custom') {
-            basePtW = parseFloat(paperW.value) || 595;
-        }
+        if (selectedPaperSize === 'a4') { basePtW = 595.28; } 
+        else if (selectedPaperSize === 'b5') { basePtW = 515.91; } 
+        else if (selectedPaperSize === 'custom') { basePtW = parseFloat(paperW.value) || 595; }
 
         if (selectedMode === 'score') {
             let pdfW, pdfH;
             if (selectedPaperSize === 'original') {
-                pdfW = cropArea.w * 0.75;
-                pdfH = (cropArea.h * files.length) * 0.75;
+                pdfW = cropArea.w * 0.75; pdfH = (cropArea.h * files.length) * 0.75;
             } else {
-                pdfW = basePtW;
-                const totalCanvasH = cropArea.h * files.length;
-                pdfH = pdfW * (totalCanvasH / cropArea.w); 
+                pdfW = basePtW; const totalCanvasH = cropArea.h * files.length; pdfH = pdfW * (totalCanvasH / cropArea.w); 
             }
 
-            // ★ 用紙の縦横比を判定して向き(pかl)を自動的に動的指定（逆向き・90度回転バグを完全解消）
             const orientation = pdfW >= pdfH ? 'l' : 'p';
             const pdf = new jsPDF(orientation, 'pt', [pdfW, pdfH]);
             const imgData = result.canvas.toDataURL('image/jpeg', 0.9);
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
-            pdf.save('combined_sheet_music.pdf');
+            pdf.save(getFinalFilename('pdf')); // ファイル名指定に対応
         } else {
             let pageW, pageH;
-            if (selectedPaperSize === 'original') {
-                pageW = cropArea.w * 0.75; 
-                pageH = cropArea.h * 0.75;
-            } else {
-                pageW = basePtW; 
-                pageH = basePtW * (cropArea.h / cropArea.w); 
-            }
+            if (selectedPaperSize === 'original') { pageW = cropArea.w * 0.75; pageH = cropArea.h * 0.75; } 
+            else { pageW = basePtW; pageH = basePtW * (cropArea.h / cropArea.w); }
 
-            // ★ 用紙の縦横比を判定して向き(pかl)を自動的に動的指定（逆向き・90度回転バグを完全解消）
             const orientation = pageW >= pageH ? 'l' : 'p';
             const pdf = new jsPDF(orientation, 'pt', [pageW, pageH]);
             
@@ -495,7 +618,7 @@
                 if (i > 0) pdf.addPage([pageW, pageH], orientation);
                 pdf.addImage(result.handoutData[i], 'JPEG', 0, 0, pageW, pageH);
             }
-            pdf.save('handout_material.pdf');
+            pdf.save(getFinalFilename('pdf')); // ファイル名指定に対応
         }
         log.style.color = "#2ecc71"; log.textContent = "✅ 指定横幅・縦比率追従のPDF保存に成功しました！";
         toggleDownloadButtons(true);
