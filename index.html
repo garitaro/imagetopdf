@@ -6,8 +6,8 @@
     <title>画像一括トリミングツール</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        body { font-family: sans-serif; margin: 0; padding: 10px; background: #f0f0f0; -webkit-user-select: none; user-select: none; }
-        .container { max-width: 600px; margin: 0 auto; background: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        body { font-family: sans-serif; margin: 0; padding: 10px; background: #f0f0f0; transition: background 0.2s ease; -webkit-user-select: none; user-select: none; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.2s ease; }
         h1 { text-align: center; color: #333; font-size: 1.2rem; margin-bottom: 5px; }
         input[type="file"] { display: block; margin: 15px auto; width: 100%; }
         
@@ -41,7 +41,7 @@
         .checkbox-container { margin: 8px 0 6px 0; font-size: 0.9rem; font-weight: bold; color: #444; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; }
         .checkbox-container input { width: 17px; height: 16px; cursor: pointer; }
 
-        /* 新設：ファイル名入力欄のスタイル */
+        /* ファイル名入力欄のスタイル */
         .filename-container { margin: 10px auto; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.9rem; font-weight: bold; color: #333; }
         .filename-container input { width: 220px; padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; font-weight: bold; text-align: left; }
 
@@ -59,7 +59,7 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="container" id="main-container">
         <h1>画像一括トリミング＆結合</h1>
         <p style="font-size:0.8rem; text-align:center; color: #666; margin: 0;" id="version-display"></p>
         
@@ -69,6 +69,7 @@
             <canvas id="crop-canvas"></canvas>
         </div>
         
+        <!-- 微調整＆常時表示セクション -->
         <div class="nudge-section" id="nudge-section">
             <p class="config-title" style="margin:0 0 5px 0; color:#e67e22;">辺の微調整 (1ピクセル単位で精密に押し引きできます)</p>
             
@@ -132,14 +133,14 @@
             </div>
         </div>
         
-        <p id="log">画像を読み込んでください。</p>
+        <p id="log">画像を読み込むか、ここにドロップしてください。</p>
     </div>
 
 <script>
     // ==========================================
     // ★ バージョン設定
     // ==========================================
-    const APP_VERSION = "v1.9.0"; 
+    const APP_VERSION = "v2.0.0"; 
 
     (function initVersion() {
         document.title = `画像一括トリミングツール (${APP_VERSION})`;
@@ -154,6 +155,7 @@
         return false;
     };
 
+    const mainContainer = document.getElementById('main-container');
     const filesInput = document.getElementById('files-input');
     const canvasContainer = document.getElementById('canvas-container');
     const cropCanvas = document.getElementById('crop-canvas');
@@ -172,7 +174,6 @@
     const customPaperInputs = document.getElementById('custom-paper-inputs');
     const paperW = document.getElementById('paper-w');
 
-    // ファイル名入力欄の要素取得
     const filenameInput = document.getElementById('output-filename');
 
     const outputSection = document.getElementById('output-section');
@@ -206,26 +207,33 @@
         return null;
     }
 
-// 入力内容から最終的なファイル名を生成する関数（日付自動スタンプ対応）
     function getFinalFilename(extension) {
         const userInput = filenameInput.value.trim();
         if (userInput) return `${userInput}.${extension}`;
         
-        // 今日の日付 (YYYYMMDD) を自動取得するロジック
         const now = new Date();
         const yyyy = now.getFullYear();
-        const mm = String(now.getMonth() + 1).padStart(2, '0'); // 月は0から始まるため+1
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
         const dd = String(now.getDate()).padStart(2, '0');
-        const dateStr = `${yyyy}${mm}${dd}`; // 例: "20260708"
+        const dateStr = `${yyyy}${mm}${dd}`;
         
-        // 未入力時は日付付きの汎用名を出力
         return selectedMode === 'score' 
             ? `combined_output_${dateStr}.${extension}` 
             : `split_output_${dateStr}.${extension}`;
     }
-    filesInput.addEventListener('change', (e) => {
-        files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
-        if (files.length === 0) return;
+
+    // ★ 共通ファイル処理コア（inputとドロップの両方からここを叩く）
+    function processFiles(incomingFiles) {
+        // 画像ファイル(png, jpeg)のみを抽出し、ファイル名順でソート
+        files = Array.from(incomingFiles)
+            .filter(f => f.type === 'image/png' || f.type === 'image/jpeg')
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+            
+        if (files.length === 0) {
+            log.style.color = "#e74c3c";
+            log.textContent = "有効な画像ファイル（PNGまたはJPG）が見つかりませんでした。";
+            return;
+        }
 
         log.style.color = "#666"; log.style.background = "#f0f0f0";
         log.textContent = `${files.length} 枚の画像を読み込み中...`;
@@ -259,6 +267,36 @@
             firstImageElement.src = event.target.result;
         };
         reader.readAsDataURL(files[0]);
+    }
+
+    // 従来のボタン経由ファイル選択
+    filesInput.addEventListener('change', (e) => {
+        processFiles(e.target.files);
+    });
+
+    // ★ ドラッグ＆ドロップイベントの制御ロジック
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        window.addEventListener(eventName, (e) => e.preventDefault(), false);
+    });
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        window.addEventListener(eventName, () => {
+            document.body.style.background = "#bdc3c7"; // 全体を少し暗くしてドロップ可能を通知
+            mainContainer.style.transform = "scale(0.99)";
+        }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        window.addEventListener(eventName, () => {
+            document.body.style.background = "#f0f0f0"; // 元のスタイルに復帰
+            mainContainer.style.transform = "scale(1)";
+        }, false);
+    });
+
+    window.addEventListener('drop', (e) => {
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            processFiles(e.dataTransfer.files);
+        }
     });
 
     ratioButtons.forEach(btn => {
@@ -331,27 +369,28 @@
         const hSize = Math.max(14, cropCanvas.width / 70); 
         ctx.fillStyle = "#ffffff"; ctx.strokeStyle = "#007bff"; ctx.lineWidth = Math.max(2, cropCanvas.width / 500);
 
+        const keepLoupeEnabled = document.getElementById('keep-loupe-checkbox').checked;
+
         handles.forEach((h, idx) => {
             if (touchState.mode === 'resize' && touchState.targetHandle === idx) return;
-            if (touchState.mode === 'none' && keepLoupeEnabled() && lastActiveHandle === idx) return;
+            if (touchState.mode === 'none' && keepLoupeEnabled && lastActiveHandle === idx) return;
             ctx.fillRect(h.x - hSize/2, h.y - hSize/2, hSize, hSize);
             ctx.strokeRect(h.x - hSize/2, h.y - hSize/2, hSize, hSize);
         });
 
         let showLoupe = false;
-        let targetIdx = -1;
         let centerX, centerY;
 
         if (touchState.mode !== 'none' && (touchState.mode === 'resize' || touchState.mode === 'create')) {
-            showLoupe = true; targetIdx = touchState.targetHandle;
+            showLoupe = true;
             if (touchState.mode === 'resize') {
                 centerX = handles[touchState.targetHandle].x; centerY = handles[touchState.targetHandle].y;
             } else {
                 centerX = touchState.currentX; centerY = touchState.currentY;
             }
-        } else if (touchState.mode === 'none' && keepLoupeEnabled() && lastActiveHandle !== -1) {
-            showLoupe = true; targetIdx = lastActiveHandle;
-            centerX = handles[targetIdx].x; centerY = handles[targetIdx].y;
+        } else if (touchState.mode === 'none' && keepLoupeEnabled && lastActiveHandle !== -1) {
+            showLoupe = true;
+            centerX = handles[lastActiveHandle].x; centerY = handles[lastActiveHandle].y;
         }
 
         if (showLoupe) {
@@ -378,8 +417,6 @@
             ctx.fillStyle = "#007bff"; ctx.fillRect(centerX - 3, centerY - 3, 6, 6);
         }
     }
-
-    function keepLoupeEnabled() { return document.getElementById('keep-loupe-checkbox').checked; }
 
     function handleStart(posX, posY) {
         if (!firstImageElement || !cropArea) return;
@@ -481,9 +518,7 @@
         const pos = getTouchPos(cropCanvas, e); handleMove(pos.x, pos.y); e.preventDefault();
     }, {passive: false});
 
-    cropCanvas.addEventListener('touchend', (e) => {
-        handleEnd(); e.preventDefault();
-    }, {passive: false});
+    cropCanvas.addEventListener('touchend', (e) => { handleEnd(); e.preventDefault(); }, {passive: false});
 
     function getMousePos(canvas, e) {
         var rect = canvas.getBoundingClientRect();
@@ -573,9 +608,9 @@
     jpgBtn.addEventListener('click', async () => {
         toggleDownloadButtons(false); const result = await generateFinalCanvas();
         const link = document.createElement('a'); 
-        link.download = getFinalFilename('jpg'); // ファイル名指定に対応
+        link.download = getFinalFilename('jpg');
         link.href = result.canvas.toDataURL('image/jpeg', 0.92); link.click();
-        log.style.color = "#2ecc71"; log.textContent = "✅ JPG画像の保存に成功しました！";
+        log.style.color = "#2ecc71"; log.textContent = "✅ 完全余白なしJPG画像の保存に成功しました！";
         toggleDownloadButtons(true);
     });
 
@@ -605,7 +640,7 @@
             const pdf = new jsPDF(orientation, 'pt', [pdfW, pdfH]);
             const imgData = result.canvas.toDataURL('image/jpeg', 0.9);
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
-            pdf.save(getFinalFilename('pdf')); // ファイル名指定に対応
+            pdf.save(getFinalFilename('pdf'));
         } else {
             let pageW, pageH;
             if (selectedPaperSize === 'original') { pageW = cropArea.w * 0.75; pageH = cropArea.h * 0.75; } 
@@ -618,7 +653,7 @@
                 if (i > 0) pdf.addPage([pageW, pageH], orientation);
                 pdf.addImage(result.handoutData[i], 'JPEG', 0, 0, pageW, pageH);
             }
-            pdf.save(getFinalFilename('pdf')); // ファイル名指定に対応
+            pdf.save(getFinalFilename('pdf'));
         }
         log.style.color = "#2ecc71"; log.textContent = "✅ 指定横幅・縦比率追従のPDF保存に成功しました！";
         toggleDownloadButtons(true);
